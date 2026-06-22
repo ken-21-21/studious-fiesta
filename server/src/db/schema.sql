@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS corrections (
   value TEXT NOT NULL,         -- corrected value (e.g. hiragana reading)
   note TEXT,
   source_id INTEGER,
+  deck_id INTEGER,            -- target deck for scope='deck' corrections
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_corrections_lookup ON corrections(kind, surface);

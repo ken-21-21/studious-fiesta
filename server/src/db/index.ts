@@ -30,3 +30,4 @@ function ensureColumn(table: string, column: string, ddl: string) {
 }
 ensureColumn("notes", "source_id", "source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL");
 ensureColumn("notes", "source_location", "source_location TEXT");
+ensureColumn("corrections", "deck_id", "deck_id INTEGER");

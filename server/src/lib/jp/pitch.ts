@@ -29,9 +29,11 @@ export interface PitchInfo {
 let index: Map<string, PitchEntry[]> | null = null;
 let loadPromise: Promise<void> | null = null;
 let downloadPromise: Promise<boolean> | null = null;
-// If the dataset can't be obtained (e.g. no network at runtime), disable pitch
-// lookups instead of throwing on every word.
-let disabled = false;
+// If the dataset can't be obtained (e.g. a transient network blip), back off
+// instead of either hammering every word lookup with a fresh download attempt
+// or disabling pitch lookups forever for the rest of the process lifetime.
+const RETRY_COOLDOWN_MS = 60_000;
+let retryAfter = 0;
 
 export function isPitchDataPresent(): boolean {
   return fs.existsSync(DATASET_PATH) && fs.statSync(DATASET_PATH).size > 0;
@@ -121,11 +123,11 @@ export function buildPattern(accent: number, morae: string[]): PitchInfo {
  * kanji); `reading` is its hiragana reading (used to disambiguate homographs).
  */
 export async function lookupPitch(base: string, reading: string | null): Promise<PitchInfo | null> {
-  if (disabled) return null;
+  if (Date.now() < retryAfter) return null;
   try {
     await load();
   } catch {
-    disabled = true;
+    retryAfter = Date.now() + RETRY_COOLDOWN_MS;
     return null;
   }
   const candidates = index!.get(base);

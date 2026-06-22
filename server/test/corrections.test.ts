@@ -110,7 +110,7 @@ describe("re-gating existing analyses and cards on correction", () => {
     expect(question.readingUncertain).toBe(false);
   });
 
-  it("does not back-apply scoped (non-global/matching) corrections to existing rows", () => {
+  it("does not back-apply scoped (occurrence/sentence) corrections to existing rows", () => {
     const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Test Deck 2')").run().lastInsertRowid);
     const noteId = Number(
       db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
@@ -131,5 +131,89 @@ describe("re-gating existing analyses and cards on correction", () => {
 
     expect(analysesUpdated).toBe(0);
     expect(cardsUpdated).toBe(0);
+  });
+
+  it("back-applies a deck-scoped correction only to notes in that deck", () => {
+    const deckA = Number(db.prepare("INSERT INTO decks (name) VALUES ('Deck A')").run().lastInsertRowid);
+    const deckB = Number(db.prepare("INSERT INTO decks (name) VALUES ('Deck B')").run().lastInsertRowid);
+    const noteA = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+        .run(deckA).lastInsertRowid
+    );
+    const noteB = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+        .run(deckB).lastInsertRowid
+    );
+    for (const noteId of [noteA, noteB]) {
+      db.prepare(`
+        INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+        VALUES (?, 'reading', '上手', 'じょうず', 0.35, 'low', 1, '[]', '[]', '{}')
+      `).run(noteId);
+    }
+
+    const { analysesUpdated, cardsUpdated } = reGateExistingAnalyses({
+      kind: "reading",
+      surface: "上手",
+      value: "うわて",
+      scope: "deck",
+      deckId: deckA,
+    });
+
+    expect(analysesUpdated).toBe(1);
+    expect(cardsUpdated).toBe(0); // no cards inserted in this fixture, just analyses
+
+    const rowA = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteA) as any;
+    const rowB = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteB) as any;
+    expect(rowA.label).toBe("うわて");
+    expect(rowB.label).toBe("じょうず"); // untouched: different deck
+  });
+
+  it("does not back-apply a deck-scoped correction when no deckId is given", () => {
+    const { analysesUpdated, cardsUpdated } = reGateExistingAnalyses({
+      kind: "reading",
+      surface: "上手",
+      value: "かみて",
+      scope: "deck",
+    });
+    expect(analysesUpdated).toBe(0);
+    expect(cardsUpdated).toBe(0);
+  });
+
+  it("back-applies a source-scoped correction only to notes from that source", () => {
+    const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Deck C')").run().lastInsertRowid);
+    const sourceA = Number(
+      db.prepare("INSERT INTO sources (kind, filename) VALUES ('textbook', 'a.txt')").run().lastInsertRowid
+    );
+    const sourceB = Number(
+      db.prepare("INSERT INTO sources (kind, filename) VALUES ('textbook', 'b.txt')").run().lastInsertRowid
+    );
+    const noteA = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, source_id, fields, tags) VALUES (?, 'textbook', ?, '{}', '')")
+        .run(deckId, sourceA).lastInsertRowid
+    );
+    const noteB = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, source_id, fields, tags) VALUES (?, 'textbook', ?, '{}', '')")
+        .run(deckId, sourceB).lastInsertRowid
+    );
+    for (const noteId of [noteA, noteB]) {
+      db.prepare(`
+        INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+        VALUES (?, 'reading', '開く', 'ひらく', 0.35, 'low', 1, '[]', '[]', '{}')
+      `).run(noteId);
+    }
+
+    const { analysesUpdated } = reGateExistingAnalyses({
+      kind: "reading",
+      surface: "開く",
+      value: "あく",
+      scope: "source",
+      sourceId: sourceA,
+    });
+
+    expect(analysesUpdated).toBe(1);
+    const rowA = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteA) as any;
+    const rowB = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteB) as any;
+    expect(rowA.label).toBe("あく");
+    expect(rowB.label).toBe("ひらく"); // untouched: different source
   });
 });

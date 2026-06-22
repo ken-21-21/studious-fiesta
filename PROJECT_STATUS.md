@@ -4,12 +4,45 @@ A living record of where this project stands. Kept in sync with the GitHub repo
 and updated on every change. Last synced commit and date are recorded below.
 
 - **My branch (Claude):** `claude/science-learning-app-fsrs-xnkrwu`
-- **Last synced commit (mine):** *(this commit)* — manual add-card flow
+- **Last synced commit (mine):** *(this commit)* — hardening: pitch-data retry
+  backoff + deck/source-scoped corrections re-gating
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
 - **Last synced commit (Antigravity):** `b626995` — Docs: Update project status
 - **Last updated:** 2026-06-22
-- **Tests:** 58 passing (11 files) · typecheck clean · build clean (server + client)
+- **Tests:** 61 passing (11 files) · typecheck clean · build clean (server + client)
+
+### Hardening: pitch-data retry backoff + deck/source-scoped re-gating (2026-06-22)
+Two gaps found while verifying the previous batch of features:
+- **Pitch dataset permanent disable on failure** (`src/lib/jp/pitch.ts`): if
+  the one-time Kanjium dataset download ever failed (network blip), pitch
+  lookups silently returned `null` for the rest of the process's lifetime —
+  no retry was ever attempted again. Added a 60s `retryAfter` cooldown so a
+  failed load backs off instead of either retrying on every single word
+  lookup (hammering the network) or disabling pitch info forever.
+- **Scoped-corrections re-gating gap** (`src/lib/corrections.ts`): `deck`-
+  and `source`-scoped corrections were already valid forward-matching
+  scopes (`getReadingCorrection`'s `SCOPE_RANK`) but had no retroactive
+  back-application path, and `deck` scope couldn't even be persisted — the
+  `corrections` table had no `deck_id` column. Fixed by:
+  - Adding `corrections.deck_id` (schema + `ensureColumn` migration).
+  - Joining `note_analyses` through `notes` to expose `deck_id`/`source_id`,
+    then filtering matches to the correction's target deck/source before
+    re-gating — so a deck-scoped correction only patches notes in that deck,
+    and a source-scoped one only patches notes from that source.
+  - Threaded `deckId` through `POST /api/corrections`, the client
+    `CorrectionInput` type, and `CorrectionForm`/`AnalysisPanel` in
+    `StudyCard.tsx` (new "This deck" scope option in the correction UI).
+  - New tests: deck-scoped correction isolated to its deck, no-op when no
+    `deckId` given, source-scoped correction isolated to its source.
+- **Still intentionally unresolved:** `occurrence`/`sentence` scope remains
+  forward-dead in practice (not just retroactively unsupported) — no
+  `cardgen.ts` call site threads a `context` string (sentence/occurrence key)
+  into `tokenize()`, so `getReadingCorrection`'s context-matching branch for
+  those two scopes never has anything to match against today. Fixing this
+  requires plumbing sentence/position context through the whole generation
+  pipeline; deferred as a larger follow-up rather than bundled into this
+  hardening pass.
 
 ### Manual add-card flow (2026-06-22)
 The only way to get content in was bulk import (apkg or textbook) — no way
@@ -207,7 +240,7 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 | A | JP pipeline: confidence, evidence, ambiguity KB, gating, corrections | ✅ Done |
 | C | Explicit, inspectable grammar annotation layer | ✅ Done |
 | B | Provenance persistence (sources + note_analyses), grammar wired into ingestion | ✅ Done |
-| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ✅ Done (global/matching scope; scoped corrections intentionally forward-only) |
+| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ✅ Done (global/matching/deck/source scope; occurrence/sentence intentionally forward-only, see hardening note) |
 | D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ⬜ Planned |
 | E | Source-grounded Q&A (Claude API) + search/retrieval indexes | ⬜ Planned |
 | F | Client UI: surface confidence/evidence/grammar, correction & review UI | 🔶 Started (provenance/analysis panel via ANTILOG) |

@@ -26,6 +26,8 @@ export interface CorrectionInput {
   value: string;
   note?: string;
   sourceId?: number;
+  /** Target deck for scope='deck' corrections. */
+  deckId?: number;
 }
 
 export interface CorrectionRow extends CorrectionInput {
@@ -35,8 +37,8 @@ export interface CorrectionRow extends CorrectionInput {
 }
 
 const insertStmt = db.prepare(`
-  INSERT INTO corrections (kind, surface, context, scope, value, note, source_id)
-  VALUES (@kind, @surface, @context, @scope, @value, @note, @sourceId)
+  INSERT INTO corrections (kind, surface, context, scope, value, note, source_id, deck_id)
+  VALUES (@kind, @surface, @context, @scope, @value, @note, @sourceId, @deckId)
 `);
 
 export function addCorrection(input: CorrectionInput): number {
@@ -48,13 +50,17 @@ export function addCorrection(input: CorrectionInput): number {
     value: input.value,
     note: input.note ?? null,
     sourceId: input.sourceId ?? null,
+    deckId: input.deckId ?? null,
   });
   return Number(res.lastInsertRowid);
 }
 
-const selectMatchingAnalysesStmt = db.prepare(
-  "SELECT id, note_id, label, alternatives FROM note_analyses WHERE kind = ? AND surface = ?"
-);
+const selectMatchingAnalysesStmt = db.prepare(`
+  SELECT na.id, na.note_id, na.label, na.alternatives, n.deck_id, n.source_id
+  FROM note_analyses na
+  JOIN notes n ON n.id = na.note_id
+  WHERE na.kind = ? AND na.surface = ?
+`);
 const reGateAnalysisStmt = db.prepare(`
   UPDATE note_analyses
   SET label = ?, confidence = 1, band = 'high', needs_review = 0,
@@ -100,27 +106,40 @@ function applyCorrectionToCardPayload(payload: any, surface: string, value: stri
  * existing study material reflects the correction immediately rather than
  * only future analysis runs.
  *
- * Scoped corrections (occurrence/sentence/source/deck) require matching the
- * original analysis context, which `note_analyses` doesn't retroactively
- * store — those are intentionally left for future analysis only (already
- * honored going forward via `getReadingCorrection`). Only `global` and
- * `matching` corrections, which apply regardless of context, are safe to
- * back-apply here.
+ * `deck` and `source` scope are resolved via each analysis's note's
+ * `deck_id`/`source_id` — both already recorded on `notes`, so no extra
+ * context needs to be stored. `occurrence` and `sentence` scope require
+ * matching the original sentence/position context, which `note_analyses`
+ * doesn't retroactively store — those remain forward-only (and, today, the
+ * generation pipeline doesn't thread that context through either, so they
+ * are effectively inert; see PROJECT_STATUS.md).
  */
 export function reGateExistingAnalyses(input: CorrectionInput): { analysesUpdated: number; cardsUpdated: number } {
   if (input.kind !== "reading" && input.kind !== "grammar") {
     return { analysesUpdated: 0, cardsUpdated: 0 };
   }
   const scope = input.scope ?? "global";
-  if (scope !== "global" && scope !== "matching") {
+  if (scope !== "global" && scope !== "matching" && scope !== "source" && scope !== "deck") {
+    return { analysesUpdated: 0, cardsUpdated: 0 };
+  }
+  if (scope === "source" && !input.sourceId) {
+    return { analysesUpdated: 0, cardsUpdated: 0 };
+  }
+  if (scope === "deck" && !input.deckId) {
     return { analysesUpdated: 0, cardsUpdated: 0 };
   }
   if (!input.surface) {
     return { analysesUpdated: 0, cardsUpdated: 0 };
   }
 
-  const rows = selectMatchingAnalysesStmt.all(input.kind, input.surface) as
-    { id: number; note_id: number; label: string; alternatives: string }[];
+  const allRows = selectMatchingAnalysesStmt.all(input.kind, input.surface) as
+    { id: number; note_id: number; label: string; alternatives: string; deck_id: number; source_id: number | null }[];
+  const rows =
+    scope === "source"
+      ? allRows.filter((r) => r.source_id === input.sourceId)
+      : scope === "deck"
+      ? allRows.filter((r) => r.deck_id === input.deckId)
+      : allRows;
 
   let analysesUpdated = 0;
   const affectedNoteIds = new Set<number>();

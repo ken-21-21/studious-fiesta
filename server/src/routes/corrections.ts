@@ -11,7 +11,7 @@ const SCOPES: CorrectionScope[] = [
 ];
 
 correctionsRouter.post("/", (req, res) => {
-  const { kind, surface, context, scope, value, note, sourceId } = req.body ?? {};
+  const { kind, surface, context, scope, value, note, sourceId, deckId } = req.body ?? {};
   if (!KINDS.includes(kind)) {
     return res.status(400).json({ error: `kind must be one of: ${KINDS.join(", ")}` });
   }
@@ -29,6 +29,7 @@ correctionsRouter.post("/", (req, res) => {
     value: value.trim(),
     note: typeof note === "string" ? note : undefined,
     sourceId: Number.isInteger(sourceId) ? sourceId : undefined,
+    deckId: Number.isInteger(deckId) ? deckId : undefined,
   };
   const id = addCorrection(correctionInput);
   const { analysesUpdated, cardsUpdated } = reGateExistingAnalyses(correctionInput);

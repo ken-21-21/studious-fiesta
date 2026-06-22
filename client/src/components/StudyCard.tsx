@@ -72,11 +72,13 @@ function CorrectionForm({
   kind,
   surface,
   sourceId,
+  deckId,
   onDone,
 }: {
   kind: "reading" | "grammar";
   surface: string;
   sourceId?: number;
+  deckId?: number;
   onDone: () => void;
 }) {
   const [value, setValue] = useState("");
@@ -89,7 +91,7 @@ function CorrectionForm({
     setSubmitting(true);
     setError(null);
     try {
-      await submitCorrection({ kind, surface, value: value.trim(), scope, sourceId });
+      await submitCorrection({ kind, surface, value: value.trim(), scope, sourceId, deckId });
       onDone();
     } catch (e: any) {
       setError(e?.message ?? "Failed to submit correction");
@@ -114,6 +116,7 @@ function CorrectionForm({
         <option value="occurrence">Just this occurrence</option>
         <option value="sentence">This sentence</option>
         <option value="source">This source</option>
+        <option value="deck">This deck</option>
         <option value="matching">Anywhere this surface appears</option>
         <option value="global">Always (global)</option>
       </select>
@@ -125,7 +128,15 @@ function CorrectionForm({
   );
 }
 
-function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: StudyCard["provenance"] }) {
+function AnalysisPanel({
+  noteId,
+  deckId,
+  provenance,
+}: {
+  noteId: number;
+  deckId: number;
+  provenance?: StudyCard["provenance"];
+}) {
   const [open, setOpen] = useState(false);
   const [analysis, setAnalysis] = useState<NoteAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
@@ -182,6 +193,7 @@ function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: St
                       kind={a.kind}
                       surface={a.surface}
                       sourceId={provenance?.sourceId}
+                      deckId={deckId}
                       onDone={() => {
                         setCorrectingIdx(null);
                         load();
@@ -233,7 +245,7 @@ function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "ba
       ) : (
         <>
           <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+          <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
     </div>
@@ -256,7 +268,7 @@ function ClozeCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "cl
       ) : (
         <>
           <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+          <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
     </div>
@@ -303,7 +315,7 @@ function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type:
       ) : (
         <>
           <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+          <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
     </div>
@@ -359,7 +371,7 @@ function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: 
       ) : (
         <>
           <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+          <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
     </div>
@@ -387,7 +399,7 @@ function VocabCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "vo
       ) : (
         <>
           <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+          <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
     </div>
@@ -410,7 +422,7 @@ function PitchCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "pi
       ) : (
         <>
           <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+          <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
     </div>

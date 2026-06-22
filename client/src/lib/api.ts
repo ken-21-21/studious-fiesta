@@ -137,6 +137,7 @@ export interface CorrectionInput {
   value: string;
   note?: string;
   sourceId?: number;
+  deckId?: number;
 }
 
 export interface AddNoteInput {
