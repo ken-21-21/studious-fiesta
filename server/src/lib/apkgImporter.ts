@@ -90,7 +90,14 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const fileHash = crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+  const fileHash = await new Promise<string>((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", reject);
+    stream.pipe(hash).on("finish", () => {
+      resolve(hash.digest("hex"));
+    });
+  });
 
   const importAll = db.transaction(() => {
     const sourceId = Number(insertSource.run(originalFilename, fileHash).lastInsertRowid);
