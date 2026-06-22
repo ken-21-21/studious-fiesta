@@ -92,7 +92,7 @@ function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "ba
       <div className="card-prompt">{card.question.text}</div>
       {revealed && <div className="card-answer">{card.answer.text}</div>}
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
       ) : (
@@ -115,7 +115,7 @@ function ClozeCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "cl
       <Media media={card.media} />
       <div className="card-prompt">{display}</div>
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
       ) : (
@@ -162,7 +162,7 @@ function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type:
       )}
       {revealed && <div className="card-answer">{card.answer.text}</div>}
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
       ) : (
@@ -218,7 +218,7 @@ function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: 
         </div>
       )}
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Check
         </button>
       ) : (
