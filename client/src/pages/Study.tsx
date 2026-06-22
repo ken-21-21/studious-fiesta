@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { fetchQueue, reviewCard, type StudyCard } from "../lib/api";
 import StudyCardView from "../components/StudyCard";
+import { SkeletonLoader } from "../components/Loaders";
 
 export default function Study() {
   const [params] = useSearchParams();
@@ -34,7 +35,7 @@ export default function Study() {
     }
   };
 
-  if (loading) return <div className="empty-state"><p>Loading cards...</p></div>;
+  if (loading) return <div className="card-container"><SkeletonLoader /></div>;
 
   if (error) {
     return (

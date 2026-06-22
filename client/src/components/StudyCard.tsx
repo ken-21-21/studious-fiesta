@@ -252,10 +252,17 @@ function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "ba
   );
 }
 
+// Server-generated cloze blanks come in two forms depending on language:
+// ASCII "_____" for English (en.ts's makeEnglishCloze) and full-width
+// "＿＿＿" for Japanese (cardgen.ts's BLANK constant). Match either so the
+// revealed answer is substituted in place instead of leaving the blank
+// on screen forever for JP cloze cards.
+const CLOZE_BLANK_RE = /_____|＿＿＿/;
+
 function ClozeCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "cloze" }>; onRate: Props["onRate"] }) {
   const [revealed, setRevealed] = useState(false);
   const display = revealed
-    ? card.question.text.replace("_____", `[${card.answer.text}]`)
+    ? card.question.text.replace(CLOZE_BLANK_RE, `[${card.answer.text}]`)
     : card.question.text;
   return (
     <div className="card-surface">
