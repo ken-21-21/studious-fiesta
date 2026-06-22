@@ -27,7 +27,7 @@ app.use("/api/sources", sourcesRouter);
 app.use("/api/notes", notesRouter);
 app.use("/api/qa", qaRouter);
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) => res.json({ data: { ok: true }, error: null }));
 
 
 const clientDist = path.resolve(__dirname, "../../client/dist");
@@ -41,9 +41,11 @@ if (fs.existsSync(clientDist)) {
 const PORT = Number(process.env.PORT) || 8787;
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error("Unhandled error:", err);
-  const status = err.status || err.statusCode || 500;
-  res.status(status).json({ error: err.message || "Internal server error" });
+  console.error(`[${new Date().toISOString()}] Unhandled error in ${req.method} ${req.url}:`, err);
+  if (!res.headersSent) {
+    const status = err.status || err.statusCode || 500;
+    res.status(status).json({ data: null, error: err.message || "Internal server error" });
+  }
 });
 
 app.listen(PORT, () => {

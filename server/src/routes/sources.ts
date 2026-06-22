@@ -17,7 +17,7 @@ sourcesRouter.get("/", (_req, res, next) => {
        ORDER BY s.created_at DESC`
     )
     .all();
-    res.json(sources);
+    res.json({ data: sources, error: null });
   } catch (err) {
     next(err);
   }
@@ -27,15 +27,15 @@ sourcesRouter.get("/:id", (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      res.status(400).json({ error: "Invalid source id" });
+      res.status(400).json({ data: null, error: "Invalid source id" });
       return;
     }
     const source = db.prepare("SELECT * FROM sources WHERE id = ?").get(id);
     if (!source) {
-      res.status(404).json({ error: "Source not found" });
+      res.status(404).json({ data: null, error: "Source not found" });
       return;
     }
-    res.json(source);
+    res.json({ data: source, error: null });
   } catch (err) {
     next(err);
   }

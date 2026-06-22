@@ -47,7 +47,7 @@ function withUpload(middleware: RequestHandler) {
     middleware(req, res, (err: unknown) => {
       if (err) {
         const message = err instanceof Error ? err.message : "Upload failed";
-        return res.status(400).json({ error: message });
+        return res.status(400).json({ data: null, error: message });
       }
       next();
     });
@@ -62,7 +62,7 @@ function resolveDeckName(provided: unknown, fallback: string): string {
 
 importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), asyncHandler(async (req, res) => {
   if (!req.file) {
-    res.status(400).json({ error: "No file uploaded" });
+    res.status(400).json({ data: null, error: "No file uploaded" });
     return;
   }
   const deckName = resolveDeckName(
@@ -71,9 +71,9 @@ importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), asyncHandler(
   );
   try {
     const result = await importApkg(req.file.path, deckName, req.file.originalname);
-    res.json(result);
+    res.json({ data: result, error: null });
   } catch (err: any) {
-    res.status(400).json({ error: err.message ?? "Failed to import apkg" });
+    res.status(400).json({ data: null, error: err.message ?? "Failed to import apkg" });
   } finally {
     fs.unlink(req.file.path, () => {});
   }
@@ -84,16 +84,16 @@ importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), asyncHandler(
 importsRouter.post("/textbook", withUpload(uploadMedia.single("file")), (req, res, next) => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: "No file uploaded" });
+      res.status(400).json({ data: null, error: "No file uploaded" });
       return;
     }
     const deckName = resolveDeckName(req.body.deckName, path.basename(req.file.originalname));
     try {
       const jobId = createTextbookJob(req.file.path, req.file.originalname, deckName);
-      res.status(202).json({ jobId });
+      res.status(202).json({ data: { jobId }, error: null });
     } catch (err: any) {
       fs.unlink(req.file.path, () => {});
-      res.status(400).json({ error: err.message ?? "Failed to start import" });
+      res.status(400).json({ data: null, error: err.message ?? "Failed to start import" });
     }
   } catch (err) {
     next(err);
@@ -104,15 +104,15 @@ importsRouter.get("/jobs/:id", (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      res.status(400).json({ error: "Invalid job id" });
+      res.status(400).json({ data: null, error: "Invalid job id" });
       return;
     }
     const job = getJob(id);
     if (!job) {
-      res.status(404).json({ error: "Job not found" });
+      res.status(404).json({ data: null, error: "Job not found" });
       return;
     }
-    res.json(job);
+    res.json({ data: job, error: null });
   } catch (err) {
     next(err);
   }

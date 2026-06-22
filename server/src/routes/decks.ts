@@ -17,7 +17,7 @@ decksRouter.get("/", (_req, res, next) => {
        ORDER BY d.created_at DESC`
     )
     .all(now);
-    res.json(decks);
+    res.json({ data: decks, error: null });
   } catch (err) {
     next(err);
   }
@@ -27,12 +27,12 @@ decksRouter.delete("/:id", (req, res, next) => {
   try {
     const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ error: "Invalid deck id" });
+    return res.status(400).json({ data: null, error: "Invalid deck id" });
   }
 
     const result = db.prepare("DELETE FROM decks WHERE id = ?").run(id);
     if (result.changes === 0) {
-      res.status(404).json({ error: "Deck not found" });
+      res.status(404).json({ data: null, error: "Deck not found" });
       return;
     }
     res.status(204).end();

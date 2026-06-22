@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { fetchNoteAnalysis, submitCorrection, type NoteAnalysis, type StudyCard, type CorrectionPayload } from "../lib/api";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 import "./CardTypes.css";
 
 interface Props {
@@ -181,21 +183,27 @@ function Media({ media }: { media: StudyCard["media"] }) {
 function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "basic" }>; onRate: Props["onRate"] }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <div className="card-surface">
-      <Media media={card.media} />
-      <div className="card-prompt">{card.question.text}</div>
-      {revealed && <div className="card-answer">{card.answer.text}</div>}
-      {!revealed ? (
+    <motion.div 
+      className="flip-card-inner"
+      initial={false}
+      animate={{ rotateY: revealed ? 180 : 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+    >
+      <div className="flip-card-front card-surface">
+        <Media media={card.media} />
+        <div className="card-prompt">{card.question.text}</div>
         <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
-      ) : (
-        <>
-          <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
-        </>
-      )}
-    </div>
+      </div>
+      <div className="flip-card-back card-surface">
+        <Media media={card.media} />
+        <div className="card-prompt">{card.question.text}</div>
+        <div className="card-answer">{card.answer.text}</div>
+        <RatingRow onRate={onRate} />
+        <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+      </div>
+    </motion.div>
   );
 }
 
@@ -205,20 +213,26 @@ function ClozeCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "cl
     ? card.question.text.replace("_____", `[${card.answer.text}]`)
     : card.question.text;
   return (
-    <div className="card-surface">
-      <Media media={card.media} />
-      <div className="card-prompt">{display}</div>
-      {!revealed ? (
+    <motion.div 
+      className="flip-card-inner"
+      initial={false}
+      animate={{ rotateY: revealed ? 180 : 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+    >
+      <div className="flip-card-front card-surface">
+        <Media media={card.media} />
+        <div className="card-prompt">{card.question.text}</div>
         <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
-      ) : (
-        <>
-          <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
-        </>
-      )}
-    </div>
+      </div>
+      <div className="flip-card-back card-surface">
+        <Media media={card.media} />
+        <div className="card-prompt">{display}</div>
+        <RatingRow onRate={onRate} />
+        <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+      </div>
+    </motion.div>
   );
 }
 
@@ -229,8 +243,6 @@ function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type:
 
   const playAudio = () => {
     if (audioUrl) {
-      // Autoplay (without a user gesture) is blocked by most browsers and
-      // rejects the play() promise; that's expected on mount, so swallow it.
       new Audio(audioUrl).play().catch(() => {});
     } else if (card.question.tts) {
       speak(card.question.tts);
@@ -242,30 +254,36 @@ function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type:
   }, [card.id]);
 
   return (
-    <div className="card-surface">
-      <button className="listen-btn" onClick={playAudio} aria-label="Play audio">
-        🔊
-      </button>
-      {!revealed && (
+    <motion.div 
+      className="flip-card-inner"
+      initial={false}
+      animate={{ rotateY: revealed ? 180 : 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+    >
+      <div className="flip-card-front card-surface">
+        <button className="listen-btn" onClick={playAudio} aria-label="Play audio">
+          🔊
+        </button>
         <input
           className="text-input"
           placeholder="Type what you heard..."
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
         />
-      )}
-      {revealed && <div className="card-answer">{card.answer.text}</div>}
-      {!revealed ? (
         <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
-      ) : (
-        <>
-          <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
-        </>
-      )}
-    </div>
+      </div>
+      <div className="flip-card-back card-surface">
+        <button className="listen-btn" onClick={playAudio} aria-label="Play audio">
+          🔊
+        </button>
+        {typed && <div className="card-prompt" style={{ fontSize: '1.25rem', opacity: 0.8 }}>You typed: {typed}</div>}
+        <div className="card-answer">{card.answer.text}</div>
+        <RatingRow onRate={onRate} />
+        <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+      </div>
+    </motion.div>
   );
 }
 
@@ -285,43 +303,46 @@ function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: 
   const undo = () => setPlacedIdx(placedIdx.slice(0, -1));
 
   return (
-    <div className="card-surface">
-      <div className="card-prompt">Put the sentence in order</div>
-      <div className="scramble-answer-row">
-        {placedIdx.map((i) => (
-          <span key={i} className="scramble-chip" onClick={undo}>
-            {words[i]}
-          </span>
-        ))}
+    <motion.div 
+      className="flip-card-inner"
+      initial={false}
+      animate={{ rotateY: revealed ? 180 : 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+    >
+      <div className="flip-card-front card-surface">
+        <div className="card-prompt">Put the sentence in order</div>
+        <div className="scramble-answer-row">
+          {placedIdx.map((i) => (
+            <span key={i} className="scramble-chip" onClick={undo}>
+              {words[i]}
+            </span>
+          ))}
+        </div>
+        <div className="scramble-row">
+          {words.map((w, i) => (
+            <span
+              key={i}
+              className={`scramble-chip ${placedIdx.includes(i) ? "placed" : ""}`}
+              onClick={() => pick(i)}
+            >
+              {w}
+            </span>
+          ))}
+        </div>
+        <button className="text-input" onClick={() => setRevealed(true)}>
+          Check
+        </button>
       </div>
-      <div className="scramble-row">
-        {words.map((w, i) => (
-          <span
-            key={i}
-            className={`scramble-chip ${placedIdx.includes(i) ? "placed" : ""}`}
-            onClick={() => pick(i)}
-          >
-            {w}
-          </span>
-        ))}
-      </div>
-      {revealed && (
+      <div className="flip-card-back card-surface">
+        <div className="card-prompt">Put the sentence in order</div>
         <div className="card-answer">
           {isCorrect ? "Correct! " : "Correct order: "}
           {correct.join(" ")}
         </div>
-      )}
-      {!revealed ? (
-        <button className="text-input" onClick={() => setRevealed(true)}>
-          Check
-        </button>
-      ) : (
-        <>
-          <RatingRow onRate={onRate} />
-          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
-        </>
-      )}
-    </div>
+        <RatingRow onRate={onRate} />
+        <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+      </div>
+    </motion.div>
   );
 }
 

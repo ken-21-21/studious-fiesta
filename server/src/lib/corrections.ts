@@ -41,15 +41,40 @@ const insertStmt = db.prepare(`
 
 import { syncNoteCards } from "./cardgen.js";
 
+const VALID_KINDS = new Set<CorrectionKind>([
+  "reading", "tokenization", "grammar", "pitch", "ocr", "asr", "translation", "field_mapping"
+]);
+const VALID_SCOPES = new Set<CorrectionScope>([
+  "occurrence", "sentence", "source", "deck", "matching", "global"
+]);
+
 export async function addCorrection(input: CorrectionInput): Promise<number> {
+  if (!VALID_KINDS.has(input.kind)) throw new Error(`Invalid correction kind: ${input.kind}`);
+  
+  const scope = input.scope ?? "global";
+  if (!VALID_SCOPES.has(scope)) throw new Error(`Invalid correction scope: ${scope}`);
+
+  const sanitize = (s: string | undefined): string | null => {
+    if (typeof s !== "string") return null;
+    const cleaned = s.replace(/[\u0000]/g, "").trim();
+    return cleaned.length > 0 ? cleaned : null;
+  };
+
+  const value = sanitize(input.value);
+  if (!value) throw new Error("Correction value cannot be empty or malformed");
+
+  const surface = sanitize(input.surface);
+  const context = sanitize(input.context);
+  const note = sanitize(input.note);
+
   const res = insertStmt.run({
     kind: input.kind,
-    surface: input.surface ?? null,
-    context: input.context ?? null,
-    scope: input.scope ?? "global",
-    value: input.value,
-    note: input.note ?? null,
-    sourceId: input.sourceId ?? null,
+    surface,
+    context,
+    scope,
+    value,
+    note,
+    sourceId: typeof input.sourceId === "number" ? input.sourceId : null,
   });
   const id = Number(res.lastInsertRowid);
 

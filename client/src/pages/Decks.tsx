@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { deleteDeck, fetchDecks, type Deck } from "../lib/api";
 import { SkeletonLoader, ErrorMessage } from "../components/Loaders";
+
+const pageVariants = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  exit: { opacity: 0, y: -20, transition: { duration: 0.2 } }
+};
 
 export default function Decks() {
   const [decks, setDecks] = useState<Deck[]>([]);
@@ -19,18 +27,29 @@ export default function Decks() {
 
   useEffect(load, []);
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Delete this deck and all its cards?")) return;
-    try {
-      await deleteDeck(id);
-      load();
-    } catch (err: any) {
-      setError(err.message ?? "Failed to delete deck");
-    }
+  const handleDelete = (id: number) => {
+    toast("Delete this deck and all its cards?", {
+      action: {
+        label: "Delete",
+        onClick: async () => {
+          try {
+            await deleteDeck(id);
+            toast.success("Deck deleted successfully");
+            load();
+          } catch (err: any) {
+            toast.error(err.message ?? "Failed to delete deck");
+          }
+        }
+      },
+      cancel: {
+        label: "Cancel",
+        onClick: () => {}
+      }
+    });
   };
 
   if (loading) return (
-    <div>
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
         <h2>Decks</h2>
       </div>
@@ -38,11 +57,11 @@ export default function Decks() {
       <div style={{ marginTop: '16px' }}>
         <SkeletonLoader />
       </div>
-    </div>
+    </motion.div>
   );
 
   return (
-    <div>
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2>Decks</h2>
         <Link to="/import" className="btn-primary">+ Import</Link>
@@ -83,6 +102,6 @@ export default function Decks() {
           <Link to="/study" className="btn-primary lg">Study all due cards</Link>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

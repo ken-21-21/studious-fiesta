@@ -14,6 +14,8 @@ export const MEDIA_DIR = path.join(dataDir, "media");
 
 export const db = new Database(path.join(dataDir, "app.db"));
 db.pragma("journal_mode = WAL");
+db.pragma("synchronous = NORMAL");
+db.pragma("busy_timeout = 5000");
 db.pragma("foreign_keys = ON");
 
 const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf-8");

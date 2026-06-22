@@ -12,14 +12,14 @@ studyRouter.get("/queue", (req, res, next) => {
     if (req.query.deckId !== undefined) {
       deckId = Number(req.query.deckId);
       if (!Number.isInteger(deckId) || deckId <= 0) {
-        res.status(400).json({ error: "deckId must be a positive integer" });
+        res.status(400).json({ data: null, error: "deckId must be a positive integer" });
         return;
       }
     }
 
     let limit = req.query.limit ? Number(req.query.limit) : 20;
     if (!Number.isInteger(limit) || limit <= 0) {
-      res.status(400).json({ error: "limit must be a positive integer" });
+      res.status(400).json({ data: null, error: "limit must be a positive integer" });
       return;
     }
     limit = Math.min(limit, MAX_QUEUE_LIMIT);
@@ -84,7 +84,7 @@ studyRouter.get("/queue", (req, res, next) => {
       : undefined,
   }));
 
-    res.json(withFields);
+    res.json({ data: withFields, error: null });
   } catch (err) {
     next(err);
   }
@@ -94,24 +94,24 @@ studyRouter.post("/cards/:id/review", (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      res.status(400).json({ error: "Invalid card id" });
+      res.status(400).json({ data: null, error: "Invalid card id" });
       return;
     }
 
     const rating = Number(req.body.rating);
     if (!VALID_RATINGS.includes(rating as (typeof VALID_RATINGS)[number])) {
-      res.status(400).json({ error: "rating must be 1-4 (Again/Hard/Good/Easy)" });
+      res.status(400).json({ data: null, error: "rating must be 1-4 (Again/Hard/Good/Easy)" });
       return;
     }
 
     const row = db.prepare("SELECT * FROM cards WHERE id = ?").get(id) as CardRow | undefined;
     if (!row) {
-      res.status(404).json({ error: "Card not found" });
+      res.status(404).json({ data: null, error: "Card not found" });
       return;
     }
 
     const updated = gradeCard(row, rating as 1 | 2 | 3 | 4);
-    res.json({ due: updated.due, stability: updated.stability, state: updated.state });
+    res.json({ data: { due: updated.due, stability: updated.stability, state: updated.state }, error: null });
   } catch (err) {
     next(err);
   }

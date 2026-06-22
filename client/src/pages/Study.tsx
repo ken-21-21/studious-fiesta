@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import { fetchQueue, reviewCard, type StudyCard } from "../lib/api";
 import StudyCardView from "../components/StudyCard";
 import { CardSkeletonLoader, ErrorMessage } from "../components/Loaders";
+
+const pageVariants = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  exit: { opacity: 0, y: -20, transition: { duration: 0.2 } }
+};
 
 export default function Study() {
   const [params] = useSearchParams();
@@ -31,24 +39,24 @@ export default function Study() {
       setQueue(rest);
       setReviewed((n) => n + 1);
     } catch (err: any) {
-      setError(err.message ?? "Failed to submit review");
+      toast.error(err.message ?? "Failed to submit review");
     }
   };
 
   if (loading) return (
-    <div className="card-container">
+    <motion.div className="card-container" variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <div className="page-header mb-4">
         <Link to="/" className="nav-link">
           <span>←</span> Decks
         </Link>
       </div>
       <CardSkeletonLoader />
-    </div>
+    </motion.div>
   );
 
   if (error) {
     return (
-      <div className="card-container">
+      <motion.div className="card-container" variants={pageVariants} initial="initial" animate="animate" exit="exit">
         <div className="page-header mb-4">
           <Link to="/" className="nav-link">
             <span>←</span> Decks
@@ -56,26 +64,26 @@ export default function Study() {
         </div>
         <ErrorMessage message={error} />
         <button onClick={load} className="btn-secondary mt-8">Retry</button>
-      </div>
+      </motion.div>
     );
   }
 
   if (queue.length === 0) {
     return (
-      <div className="empty-state">
+      <motion.div className="empty-state" variants={pageVariants} initial="initial" animate="animate" exit="exit">
         <h2>All caught up! 🎉</h2>
         <p>{reviewed > 0 ? `Reviewed ${reviewed} cards today. ` : ""}No cards due right now.</p>
         <div className="mt-8">
           <Link to="/" className="btn-primary">Back to decks</Link>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   const current = queue[0];
 
   return (
-    <div className="card-container">
+    <motion.div className="card-container" variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <div className="page-header mb-4">
         <Link to="/" className="nav-link">
           <span>←</span> Decks
@@ -84,7 +92,17 @@ export default function Study() {
           {queue.length} remaining
         </span>
       </div>
-      <StudyCardView card={current} onRate={handleRate} />
-    </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={current.id}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          transition={{ duration: 0.2 }}
+        >
+          <StudyCardView card={current} onRate={handleRate} />
+        </motion.div>
+      </AnimatePresence>
+    </motion.div>
   );
 }

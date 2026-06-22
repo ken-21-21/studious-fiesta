@@ -10,12 +10,12 @@ notesRouter.get("/:id/analysis", (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      res.status(400).json({ error: "Invalid note id" });
+      res.status(400).json({ data: null, error: "Invalid note id" });
       return;
     }
     const note = db.prepare("SELECT id FROM notes WHERE id = ?").get(id);
     if (!note) {
-      res.status(404).json({ error: "Note not found" });
+      res.status(404).json({ data: null, error: "Note not found" });
       return;
     }
 
@@ -28,8 +28,8 @@ notesRouter.get("/:id/analysis", (req, res, next) => {
     )
     .all(id) as any[];
 
-  res.json(
-    rows.map((r) => ({
+  res.json({
+    data: rows.map((r) => ({
       kind: r.kind,
       surface: r.surface,
       label: r.label,
@@ -45,8 +45,9 @@ notesRouter.get("/:id/analysis", (req, res, next) => {
       payload: JSON.parse(r.payload),
       correctedByUser: !!r.corrected_by_user,
       createdAt: r.created_at,
-    }))
-  );
+    })),
+    error: null
+  });
   } catch (err) {
     next(err);
   }
