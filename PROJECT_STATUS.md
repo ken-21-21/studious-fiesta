@@ -10,7 +10,48 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-22
-- **Tests:** 61 passing (11 files) · typecheck clean · build clean (server + client)
+- **Tests:** 64 passing (11 files) · typecheck clean · build clean (server + client)
+
+### Parallel hardening/debug/UI pass (2026-06-22)
+Ran three agents in parallel (isolated git worktrees, no shared files) on
+"harden the core engines, debug, and improve UI"; merged all three cleanly
+and re-ran the full gate suite afterward.
+
+**Server hardening** (`server/src/lib/corrections.ts`, `routes/{study,notes,
+backup}.ts`, `lib/apkgImporter.ts`): several `JSON.parse()` calls on
+DB-stored payloads (`note_analyses.alternatives`, `cards.question/answer`,
+study-queue rows, note-analysis listing) had no error handling — one
+corrupted row could throw and take down an entire request (the whole study
+queue, or a whole `POST /api/corrections` batch). Now a bad row is skipped
+and logged, not fatal to the rest of the batch — correction counts reflect
+only rows actually updated. Also: `apkgImporter.ts`'s media-file write now
+fails the import cleanly instead of leaving a half-imported state, and
+`backup.ts`'s temp-file path is explicitly confined under the resolved tmp
+dir. New tests cover the corrections-with-one-corrupted-row case.
+
+**Real bug found and fixed (invariant-relevant):** uncertain readings were
+being rendered as if confirmed, in three compounding layers — server-side
+`furiganaOf()` (`cardgen.ts`) dropped both the reading *and* the uncertainty
+flag for ambiguous kanji (e.g. 開く, 上手, 辛い) instead of calling the
+already-correct logic that existed in `tokenizer.ts` but was dead code;
+client-side `Furigana` had no render branch for "reading withheld entirely"
+and silently fell through to a plain span; and `ListeningCard` never
+rendered furigana on revealed answers at all, confident or not. All three
+fixed; the `?` uncertainty marker now reliably reaches the screen. New
+regression test in `cardgen.gating.test.ts`.
+
+**Other bug fixed:** textbook import is async (`202 {jobId}` + background
+job), but the client read result fields straight off that initial response
+instead of polling `/api/import/jobs/:id` — always showed "Created undefined
+cards from undefined sentences." Now polls until the job completes.
+
+**UI polish:** Japanese cloze cards never revealed their answer in place
+(blank-matching regex only handled the ASCII English blank, not the
+full-width JP one) — looked permanently broken. Also fixed: mobile header
+wrapping/overlap at narrow widths, an entirely unstyled `<select>` on the
+add-card deck picker, an inconsistent bare-text loading state on the study
+page (now uses the same skeleton loader as Decks), and "1 cards" singular/
+plural text.
 
 ### Hardening: pitch-data retry backoff + deck/source-scoped re-gating (2026-06-22)
 Two gaps found while verifying the previous batch of features:
