@@ -23,40 +23,63 @@ studyRouter.get("/queue", (req, res) => {
 
   const now = new Date().toISOString();
 
-  const cards = deckId
-    ? db
-        .prepare(`SELECT * FROM cards WHERE deck_id = ? AND due <= ? ORDER BY due ASC LIMIT ?`)
-        .all(deckId, now, limit)
-    : db
-        .prepare(`SELECT * FROM cards WHERE due <= ? ORDER BY due ASC LIMIT ?`)
-        .all(now, limit);
+  const query = deckId
+    ? `SELECT 
+         c.*,
+         n.fields AS note_fields,
+         n.source_location,
+         s.id AS source_id,
+         s.kind AS source_kind,
+         s.filename AS source_filename
+       FROM cards c
+       JOIN notes n ON c.note_id = n.id
+       LEFT JOIN sources s ON n.source_id = s.id
+       WHERE c.deck_id = ? AND c.due <= ?
+       ORDER BY c.due ASC LIMIT ?`
+    : `SELECT 
+         c.*,
+         n.fields AS note_fields,
+         n.source_location,
+         s.id AS source_id,
+         s.kind AS source_kind,
+         s.filename AS source_filename
+       FROM cards c
+       JOIN notes n ON c.note_id = n.id
+       LEFT JOIN sources s ON n.source_id = s.id
+       WHERE c.due <= ?
+       ORDER BY c.due ASC LIMIT ?`;
 
-  const withFields = cards.map((c: any) => {
-    const note = db
-      .prepare(
-        `SELECT n.fields, n.source_location, s.id AS source_id, s.kind AS source_kind, s.filename AS source_filename
-         FROM notes n LEFT JOIN sources s ON s.id = n.source_id
-         WHERE n.id = ?`
-      )
-      .get(c.note_id) as
-      | { fields: string; source_location: string | null; source_id: number | null; source_kind: string | null; source_filename: string | null }
-      | undefined;
-    return {
-      ...c,
-      question: JSON.parse(c.question),
-      answer: JSON.parse(c.answer),
-      media: JSON.parse(c.media),
-      noteFields: note ? JSON.parse(note.fields) : {},
-      provenance: note?.source_id
-        ? {
-            sourceId: note.source_id,
-            kind: note.source_kind,
-            filename: note.source_filename,
-            location: note.source_location ? JSON.parse(note.source_location) : undefined,
-          }
-        : undefined,
-    };
-  });
+  const rows = deckId
+    ? db.prepare(query).all(deckId, now, limit)
+    : db.prepare(query).all(now, limit);
+
+  const withFields = rows.map((r: any) => ({
+    id: r.id,
+    note_id: r.note_id,
+    deck_id: r.deck_id,
+    card_type: r.card_type,
+    due: r.due,
+    stability: r.stability,
+    difficulty: r.difficulty,
+    elapsed_days: r.elapsed_days,
+    scheduled_days: r.scheduled_days,
+    reps: r.reps,
+    lapses: r.lapses,
+    state: r.state,
+    last_review: r.last_review,
+    question: JSON.parse(r.question),
+    answer: JSON.parse(r.answer),
+    media: JSON.parse(r.media),
+    noteFields: r.note_fields ? JSON.parse(r.note_fields) : {},
+    provenance: r.source_id
+      ? {
+          sourceId: r.source_id,
+          kind: r.source_kind,
+          filename: r.source_filename,
+          location: r.source_location ? JSON.parse(r.source_location) : undefined,
+        }
+      : undefined,
+  }));
 
   res.json(withFields);
 });

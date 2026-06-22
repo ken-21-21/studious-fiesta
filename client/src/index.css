@@ -16,14 +16,21 @@
   --text-h: #f8fafc;
   --bg: #0f111a;
   --bg-surface: rgba(30, 33, 43, 0.6);
+  --glass-bg: rgba(30, 33, 43, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
   --border: rgba(255, 255, 255, 0.08);
   --code-bg: rgba(15, 17, 26, 0.8);
   --accent: #8b5cf6;
   --accent-glow: rgba(139, 92, 246, 0.4);
   --accent-bg: rgba(139, 92, 246, 0.1);
   --accent-border: rgba(139, 92, 246, 0.5);
-  
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+
   --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 18px -6px rgba(0, 0, 0, 0.7), 0 0 24px var(--accent-glow);
   --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.8), 0 0 40px var(--accent-glow);
   --shadow-glow: 0 0 20px var(--accent-glow);
 

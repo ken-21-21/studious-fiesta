@@ -40,8 +40,15 @@ const insertAnalysisStmt = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-function hashFile(filePath: string): string {
-  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+function hashFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", reject);
+    stream.pipe(hash).on("finish", () => {
+      resolve(hash.digest("hex"));
+    });
+  });
 }
 
 // Insert one lesson's notes+cards atomically and return (deckId, cardCount).
@@ -111,8 +118,9 @@ export function createTextbookJob(filePath: string, originalFilename: string, ba
 async function runTextbookJob(id: number, filePath: string, originalFilename: string, baseDeckName: string) {
   try {
     updateJob(id, { status: "running", message: "Reading document…" });
+    const hash = await hashFile(filePath);
     const sourceId = Number(
-      insertSourceStmt.run("textbook", originalFilename, hashFile(filePath)).lastInsertRowid
+      insertSourceStmt.run("textbook", originalFilename, hash).lastInsertRowid
     );
     const text = await extractText(filePath, originalFilename);
 

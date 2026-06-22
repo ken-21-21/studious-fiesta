@@ -7,11 +7,28 @@ and updated on every change. Last synced commit and date are recorded below.
 - **Last synced commit (mine):** *(this commit)* — Reconcile ANTILOG: gating fixes, client provenance UI, redesign
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
-- **Last synced commit (Antigravity):** `61391df` — Premium Frontend rebuild: Design and Wiring
+- **Last synced commit (Antigravity):** `b626995` — Docs: Update project status
 - **Last updated:** 2026-06-22
 - **Tests:** 49 passing (8 files) · typecheck clean · build clean
 
-### Reconciliation note (2026-06-22, ANTILOG → mine)
+### Reconciliation note (2026-06-22, ANTILOG → mine, round 2)
+Evaluated 4 more commits from `ANTILOG` (`61391df`→`b626995`): backend
+hardening, all kept:
+- **Kept:** file hashing now streams (`createReadStream` → hash) instead of
+  `readFileSync`-ing the whole file into memory, in both the apkg importer
+  and the textbook job pipeline; large apkg imports are now chunked into
+  500-row transactions instead of one giant transaction; the study queue's
+  N+1 per-card note/provenance lookup replaced with a single JOIN query.
+  All are straightforward correctness/scalability fixes with no invariant
+  or locked-decision conflicts.
+- **Also fixed in this pass:** the redesign CSS from the prior reconciliation
+  round references `--glass-bg`, `--glass-border`, `--shadow-md`, `--danger`,
+  `--success`, `--warning`, `--info` that were never defined in `:root` —
+  without them the four study rating buttons (Again/Hard/Good/Easy) rendered
+  white-on-transparent (invisible) and glass panels lost their tint/border/
+  shadow. Added the missing token definitions to `index.css`.
+
+### Reconciliation note (2026-06-22, ANTILOG → mine, round 1)
 Evaluated 6 commits from `ANTILOG` (latest `61391df`). Kept nearly everything;
 it strengthened the core invariant rather than weakening it:
 - **Kept:** cloze/scramble cards now gate uncertain readings the same way
