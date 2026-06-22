@@ -8,6 +8,8 @@ import { classify, splitSentences } from "./lang.js";
 import { makeEnglishCloze } from "./en.js";
 import { scrambledOrder } from "./shuffle.js";
 import type { Lesson, Section, SectionType } from "./segment.js";
+import { db } from "../db/index.js";
+import { newCardDefaults } from "./fsrs.js";
 
 export type CardType = "vocab" | "cloze" | "scramble" | "listening" | "pitch";
 
@@ -161,7 +163,7 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
   };
 }
 
-async function vocabNote(entry: VocabEntry): Promise<NoteSpec> {
+export async function vocabNote(entry: VocabEntry): Promise<NoteSpec> {
   const a = await analyzeTerm(entry.term, entry.reading);
   const jp = {
     furigana: a.furigana,
@@ -325,7 +327,7 @@ function englishSentenceCards(sentence: string, type: SectionType): CardSpec[] {
   return cards;
 }
 
-async function sentenceNote(sentence: string, type: SectionType): Promise<NoteSpec | null> {
+export async function sentenceNote(sentence: string, type: SectionType): Promise<NoteSpec | null> {
   const lang = classify(sentence);
   if (lang === "en") {
     const cards = englishSentenceCards(sentence, type);
@@ -375,4 +377,100 @@ export async function generateLessonNotes(lesson: Lesson): Promise<NoteSpec[]> {
     notes.push(...(await generateSection(section, budget)));
   }
   return notes;
+}
+
+export async function syncNoteCards(noteId: number) {
+  const noteRow = db.prepare("SELECT * FROM notes WHERE id = ?").get(noteId) as any;
+  if (!noteRow) return;
+
+  const fields = JSON.parse(noteRow.fields);
+  const tags = noteRow.tags;
+  
+  let spec: NoteSpec | null = null;
+  if (tags.includes("vocabulary")) {
+    spec = await vocabNote({
+      term: fields.Term,
+      reading: fields.Reading || undefined,
+      gloss: fields.Gloss
+    });
+  } else {
+    const type = tags.split(" ")[0] as SectionType;
+    if (fields.sentence) {
+      spec = await sentenceNote(fields.sentence, type);
+    }
+  }
+
+  if (!spec) return;
+
+  const existingCards = db.prepare("SELECT id, card_type FROM cards WHERE note_id = ?").all(noteId) as {id: number, card_type: string}[];
+  const existingTypes = new Map(existingCards.map(c => [c.card_type, c.id]));
+
+  const updateCardStmt = db.prepare(`UPDATE cards SET question = ?, answer = ?, media = ? WHERE id = ?`);
+  const insertCardStmt = db.prepare(`
+    INSERT INTO cards (note_id, deck_id, card_type, question, answer, media,
+      due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const tx = db.transaction(() => {
+    db.prepare("DELETE FROM note_analyses WHERE note_id = ?").run(noteId);
+    const insertAnalysis = db.prepare(`
+      INSERT INTO note_analyses (note_id, kind, surface, label, span_start, span_end,
+        confidence, band, needs_review, analyzer_name, analyzer_version, evidence, alternatives, payload, corrected_by_user)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    for (const a of spec!.analysis ?? []) {
+      const isCorrected = a.evidence.some(e => e.source === "user_correction") ? 1 : 0;
+      insertAnalysis.run(
+        noteId,
+        a.kind,
+        a.surface,
+        a.label,
+        a.spanStart,
+        a.spanEnd,
+        a.confidence,
+        a.band,
+        a.needsReview ? 1 : 0,
+        a.analyzerName,
+        a.analyzerVersion,
+        JSON.stringify(a.evidence),
+        JSON.stringify(a.alternatives),
+        JSON.stringify(a.payload),
+        isCorrected
+      );
+    }
+
+    for (const card of spec!.cards) {
+      const existingId = existingTypes.get(card.cardType);
+      if (existingId) {
+        updateCardStmt.run(
+          JSON.stringify(card.question),
+          JSON.stringify(card.answer),
+          JSON.stringify(card.media ?? {}),
+          existingId
+        );
+      } else {
+        const defaults = newCardDefaults();
+        insertCardStmt.run(
+          noteId,
+          noteRow.deck_id,
+          card.cardType,
+          JSON.stringify(card.question),
+          JSON.stringify(card.answer),
+          JSON.stringify(card.media ?? {}),
+          defaults.due,
+          defaults.stability,
+          defaults.difficulty,
+          defaults.elapsed_days,
+          defaults.scheduled_days,
+          defaults.reps,
+          defaults.lapses,
+          defaults.state
+        );
+      }
+    }
+  });
+
+  tx();
 }

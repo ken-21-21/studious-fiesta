@@ -39,7 +39,9 @@ const insertStmt = db.prepare(`
   VALUES (@kind, @surface, @context, @scope, @value, @note, @sourceId)
 `);
 
-export function addCorrection(input: CorrectionInput): number {
+import { syncNoteCards } from "./cardgen.js";
+
+export async function addCorrection(input: CorrectionInput): Promise<number> {
   const res = insertStmt.run({
     kind: input.kind,
     surface: input.surface ?? null,
@@ -49,7 +51,20 @@ export function addCorrection(input: CorrectionInput): number {
     note: input.note ?? null,
     sourceId: input.sourceId ?? null,
   });
-  return Number(res.lastInsertRowid);
+  const id = Number(res.lastInsertRowid);
+
+  if (input.surface) {
+    const affectedNotes = db
+      .prepare("SELECT DISTINCT note_id FROM note_analyses WHERE kind = ? AND surface = ?")
+      .all(input.kind, input.surface) as { note_id: number }[];
+    
+    // Process sequentially to avoid DB locks
+    for (const row of affectedNotes) {
+      await syncNoteCards(row.note_id);
+    }
+  }
+
+  return id;
 }
 
 // Specificity ordering so a more local correction wins over a broader one.
