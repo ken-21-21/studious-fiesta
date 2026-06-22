@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addCorrection, type CorrectionKind, type CorrectionScope } from "../lib/corrections.js";
+import { addCorrection, reGateExistingAnalyses, type CorrectionKind, type CorrectionScope } from "../lib/corrections.js";
 
 export const correctionsRouter = Router();
 
@@ -21,7 +21,7 @@ correctionsRouter.post("/", (req, res) => {
   if (scope !== undefined && !SCOPES.includes(scope)) {
     return res.status(400).json({ error: `scope must be one of: ${SCOPES.join(", ")}` });
   }
-  const id = addCorrection({
+  const correctionInput = {
     kind,
     surface: typeof surface === "string" ? surface : undefined,
     context: typeof context === "string" ? context : undefined,
@@ -29,6 +29,8 @@ correctionsRouter.post("/", (req, res) => {
     value: value.trim(),
     note: typeof note === "string" ? note : undefined,
     sourceId: Number.isInteger(sourceId) ? sourceId : undefined,
-  });
-  res.status(201).json({ id });
+  };
+  const id = addCorrection(correctionInput);
+  const { analysesUpdated, cardsUpdated } = reGateExistingAnalyses(correctionInput);
+  res.status(201).json({ id, analysesUpdated, cardsUpdated });
 });

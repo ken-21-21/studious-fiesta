@@ -4,12 +4,50 @@ A living record of where this project stands. Kept in sync with the GitHub repo
 and updated on every change. Last synced commit and date are recorded below.
 
 - **My branch (Claude):** `claude/science-learning-app-fsrs-xnkrwu`
-- **Last synced commit (mine):** *(this commit)* — apkg zip-bomb guard + client vocab/pitch card rendering
+- **Last synced commit (mine):** *(this commit)* — corrections ↔ analysis re-gating loop (Phase B+)
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
 - **Last synced commit (Antigravity):** `b626995` — Docs: Update project status
 - **Last updated:** 2026-06-22
-- **Tests:** 51 passing (9 files) · typecheck clean · build clean (server + client)
+- **Tests:** 53 passing (9 files) · typecheck clean · build clean (server + client)
+
+### Phase B+: corrections ↔ analysis re-gating loop (2026-06-22)
+Closes the last open item on Phase B+: submitting a correction previously
+only affected *future* analysis runs (via `getReadingCorrection`, already
+wired into `readings.ts`) — existing `note_analyses` rows and the cards
+already generated from them stayed stale and still showed `needsReview`,
+so a user-corrected reading wasn't reflected anywhere they'd actually see it.
+- `reGateExistingAnalyses()` (`server/src/lib/corrections.ts`), called from
+  `POST /api/corrections`: for `reading`/`grammar` corrections with `global`
+  or `matching` scope, finds existing `note_analyses` rows with the same
+  kind+surface, marks them `corrected_by_user = 1`, sets `confidence = 1`,
+  `band = 'high'`, `needs_review = 0`, and folds the prior label into
+  `alternatives` so the override is still inspectable, not just silently
+  swapped.
+- For notes with a re-gated analysis, also rewrites the stored `question`/
+  `answer` JSON of their cards in place wherever a payload's `text` is
+  *exactly* the corrected surface (whole-term match only, never a substring
+  guess) or a `furigana` segment matches it — so the flashcard itself stops
+  showing the wrong reading, not just the analysis panel.
+- **Known, intentional limitation:** scoped corrections
+  (occurrence/sentence/source/deck) are *not* back-applied to existing rows,
+  because `note_analyses` doesn't retroactively store the context
+  (sentence/source key) `getReadingCorrection` matches against — back-
+  applying them would risk silently overwriting an unrelated occurrence of
+  the same surface. They still apply correctly to all *future* analysis via
+  the existing forward path. This is a deliberate "don't guess" choice
+  consistent with the core invariant, not an oversight.
+- **Also intentionally out of scope:** a correction can't retroactively
+  *create* a card that was never generated because the old, lower-confidence
+  reading gated it out (e.g. a listening/pitch card that never existed for a
+  `needsReview` vocab entry). Doing that safely requires re-running the full
+  textbook/apkg ingestion pipeline for the affected note, which risks
+  duplicating cards or losing FSRS review history — not attempted here.
+  Candidate for a real "re-import this note" flow later if it matters in
+  practice.
+- New tests in `corrections.test.ts` cover both the re-gating path (analysis
+  + card payload updated) and the scoped-correction non-back-application
+  path.
 
 ### Hardening: apkg zip-bomb guard (2026-06-22)
 `apkgImporter.ts` now checks `entry.header.size` (the zip's *declared*
@@ -157,7 +195,7 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 | A | JP pipeline: confidence, evidence, ambiguity KB, gating, corrections | ✅ Done |
 | C | Explicit, inspectable grammar annotation layer | ✅ Done |
 | B | Provenance persistence (sources + note_analyses), grammar wired into ingestion | ✅ Done |
-| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ⏳ Next |
+| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ✅ Done (global/matching scope; scoped corrections intentionally forward-only) |
 | D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ⬜ Planned |
 | E | Source-grounded Q&A (Claude API) + search/retrieval indexes | ⬜ Planned |
 | F | Client UI: surface confidence/evidence/grammar, correction & review UI | 🔶 Started (provenance/analysis panel via ANTILOG) |
