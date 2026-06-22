@@ -6,6 +6,13 @@ import path from "node:path";
 import { db, MEDIA_DIR } from "../db/index.js";
 import { newCardDefaults } from "./fsrs.js";
 
+// Caps on *uncompressed* size, checked against zip header metadata before any
+// entry is decompressed — multer's upload limit only bounds the compressed
+// .apkg on disk, so without this a small crafted archive (zip bomb) could
+// decompress to gigabytes and exhaust memory.
+const MAX_ENTRY_UNCOMPRESSED_BYTES = 200 * 1024 * 1024; // 200MB per file (collection db or one media file)
+const MAX_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024; // 1GB across the whole archive
+
 let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
 
 async function getSql() {
@@ -32,6 +39,18 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     throw new Error("Not a valid .apkg file (could not read as a zip archive)");
   }
   const entries = zip.getEntries();
+
+  let totalUncompressed = 0;
+  for (const entry of entries) {
+    const size = entry.header.size;
+    if (size > MAX_ENTRY_UNCOMPRESSED_BYTES) {
+      throw new Error(`Archive entry "${entry.entryName}" is too large when decompressed`);
+    }
+    totalUncompressed += size;
+    if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+      throw new Error("Archive is too large when decompressed");
+    }
+  }
 
   const collEntry =
     entries.find((e) => e.entryName === "collection.anki21") ??
