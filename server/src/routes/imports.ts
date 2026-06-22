@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { importApkg } from "../lib/apkgImporter.js";
-import { importTextbook } from "../lib/textbookImporter.js";
+import { createTextbookJob, getJob } from "../lib/jobs.js";
 
 export const importsRouter = Router();
 
@@ -70,15 +70,26 @@ importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), async (req, r
   }
 });
 
-importsRouter.post("/textbook", withUpload(uploadTextbook.single("file")), async (req, res) => {
+// Textbooks can be large, so they are processed as a background job (one
+// lesson at a time). Returns a jobId the client polls for progress.
+importsRouter.post("/textbook", withUpload(uploadTextbook.single("file")), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const deckName = resolveDeckName(req.body.deckName, path.basename(req.file.originalname));
   try {
-    const result = await importTextbook(req.file.path, req.file.originalname, deckName);
-    res.json(result);
+    const jobId = createTextbookJob(req.file.path, req.file.originalname, deckName);
+    res.status(202).json({ jobId });
   } catch (err: any) {
-    res.status(400).json({ error: err.message ?? "Failed to import textbook" });
-  } finally {
     fs.unlink(req.file.path, () => {});
+    res.status(400).json({ error: err.message ?? "Failed to start import" });
   }
+});
+
+importsRouter.get("/jobs/:id", (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid job id" });
+  }
+  const job = getJob(id);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json(job);
 });

@@ -50,6 +50,36 @@ CREATE TABLE IF NOT EXISTS review_logs (
   review TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS import_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,            -- 'textbook'
+  filename TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | done | error
+  progress INTEGER NOT NULL DEFAULT 0,    -- lessons processed
+  total INTEGER NOT NULL DEFAULT 0,       -- lessons detected
+  message TEXT NOT NULL DEFAULT '',
+  cards_created INTEGER NOT NULL DEFAULT 0,
+  result TEXT,                  -- JSON summary (decks created)
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- User corrections are first-class data. They take precedence over any
+-- analyzer/dictionary output and are reused in future analysis.
+CREATE TABLE IF NOT EXISTS corrections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,          -- 'reading'|'tokenization'|'grammar'|'pitch'|'ocr'|'asr'|'translation'|'field_mapping'
+  surface TEXT,                -- surface form being corrected (reading/tokenization/pitch)
+  context TEXT,                -- optional scope key (sentence hash, source id, …)
+  scope TEXT NOT NULL DEFAULT 'global', -- occurrence|sentence|source|deck|matching|global
+  value TEXT NOT NULL,         -- corrected value (e.g. hiragana reading)
+  note TEXT,
+  source_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_corrections_lookup ON corrections(kind, surface);
+
 CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(due);
 CREATE INDEX IF NOT EXISTS idx_cards_deck ON cards(deck_id);
 CREATE INDEX IF NOT EXISTS idx_notes_deck ON notes(deck_id);

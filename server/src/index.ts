@@ -7,6 +7,7 @@ import { MEDIA_DIR } from "./db/index.js";
 import { decksRouter } from "./routes/decks.js";
 import { importsRouter } from "./routes/imports.js";
 import { studyRouter } from "./routes/study.js";
+import { correctionsRouter } from "./routes/corrections.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,7 @@ app.use("/media", express.static(MEDIA_DIR));
 app.use("/api/decks", decksRouter);
 app.use("/api/import", importsRouter);
 app.use("/api/study", studyRouter);
+app.use("/api/corrections", correctionsRouter);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 

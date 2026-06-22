@@ -9,6 +9,7 @@ const dataDir = process.env.DATA_DIR ?? path.resolve(__dirname, "../../data");
 fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(path.join(dataDir, "media"), { recursive: true });
 
+export const DATA_DIR = dataDir;
 export const MEDIA_DIR = path.join(dataDir, "media");
 
 export const db = new Database(path.join(dataDir, "app.db"));
