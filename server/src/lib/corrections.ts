@@ -145,25 +145,37 @@ export function reGateExistingAnalyses(input: CorrectionInput): { analysesUpdate
   const affectedNoteIds = new Set<number>();
   for (const row of rows) {
     if (row.label === input.value) continue;
-    const prevAlternatives: string[] = JSON.parse(row.alternatives || "[]");
-    const alternatives = [...new Set([row.label, ...prevAlternatives].filter((a) => a && a !== input.value))];
-    const evidence = [{ source: "user_correction", detail: `User-corrected (scope: ${scope})` }];
-    reGateAnalysisStmt.run(input.value, JSON.stringify(alternatives), JSON.stringify(evidence), row.id);
-    analysesUpdated++;
-    affectedNoteIds.add(row.note_id);
+    try {
+      const prevAlternatives: string[] = JSON.parse(row.alternatives || "[]");
+      const alternatives = [...new Set([row.label, ...prevAlternatives].filter((a) => a && a !== input.value))];
+      const evidence = [{ source: "user_correction", detail: `User-corrected (scope: ${scope})` }];
+      reGateAnalysisStmt.run(input.value, JSON.stringify(alternatives), JSON.stringify(evidence), row.id);
+      analysesUpdated++;
+      affectedNoteIds.add(row.note_id);
+    } catch (err) {
+      // A corrupted alternatives payload on one row must not abort the
+      // whole correction batch — log and keep processing the rest.
+      console.error(`reGateExistingAnalyses: skipping corrupt note_analyses row id=${row.id}`, err);
+    }
   }
 
   let cardsUpdated = 0;
   for (const noteId of affectedNoteIds) {
     const cards = selectNoteCardsStmt.all(noteId) as { id: number; question: string; answer: string }[];
     for (const c of cards) {
-      const question = JSON.parse(c.question);
-      const answer = JSON.parse(c.answer);
-      const qChanged = applyCorrectionToCardPayload(question, input.surface, input.value);
-      const aChanged = applyCorrectionToCardPayload(answer, input.surface, input.value);
-      if (qChanged || aChanged) {
-        updateCardStmt.run(JSON.stringify(question), JSON.stringify(answer), c.id);
-        cardsUpdated++;
+      try {
+        const question = JSON.parse(c.question);
+        const answer = JSON.parse(c.answer);
+        const qChanged = applyCorrectionToCardPayload(question, input.surface, input.value);
+        const aChanged = applyCorrectionToCardPayload(answer, input.surface, input.value);
+        if (qChanged || aChanged) {
+          updateCardStmt.run(JSON.stringify(question), JSON.stringify(answer), c.id);
+          cardsUpdated++;
+        }
+      } catch (err) {
+        // Same defense for the card payload patch: a corrupted card row is
+        // skipped, not fatal to the rest of the batch.
+        console.error(`reGateExistingAnalyses: skipping corrupt card row id=${c.id}`, err);
       }
     }
   }

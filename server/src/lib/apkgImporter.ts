@@ -73,7 +73,13 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     const entry = entries.find((e) => e.entryName === num);
     if (!entry) continue;
     const safeName = `${Date.now()}_${num}_${path.basename(originalName)}`;
-    fs.writeFileSync(path.join(MEDIA_DIR, safeName), entry.getData());
+    try {
+      fs.writeFileSync(path.join(MEDIA_DIR, safeName), entry.getData());
+    } catch (err: any) {
+      throw new Error(
+        `Failed to write media file "${originalName}" during import: ${err?.message ?? err}`
+      );
+    }
     origNameToStored[originalName] = safeName;
   }
 
