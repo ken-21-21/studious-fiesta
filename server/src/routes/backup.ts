@@ -10,7 +10,15 @@ export const backupRouter = Router();
 // the -wal file. better-sqlite3's .backup() uses SQLite's online backup API,
 // which produces a consistent snapshot regardless of WAL state.
 backupRouter.get("/", async (_req, res) => {
-  const tmpPath = path.join(os.tmpdir(), `backup-${Date.now()}-${process.pid}.db`);
+  const tmpDir = path.resolve(os.tmpdir());
+  const tmpPath = path.resolve(tmpDir, `backup-${Date.now()}-${process.pid}.db`);
+  // Defense in depth: the filename above is built entirely from trusted,
+  // non-attacker-controlled values (Date.now()/process.pid), but confirm the
+  // resolved path is still confined to the temp dir before touching the
+  // filesystem, in case that ever changes.
+  if (tmpPath !== tmpDir && !tmpPath.startsWith(tmpDir + path.sep)) {
+    return res.status(500).json({ error: "Failed to create backup" });
+  }
   try {
     await db.backup(tmpPath);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");

@@ -53,33 +53,42 @@ studyRouter.get("/queue", (req, res) => {
     ? db.prepare(query).all(deckId, now, limit)
     : db.prepare(query).all(now, limit);
 
-  const withFields = rows.map((r: any) => ({
-    id: r.id,
-    note_id: r.note_id,
-    deck_id: r.deck_id,
-    card_type: r.card_type,
-    due: r.due,
-    stability: r.stability,
-    difficulty: r.difficulty,
-    elapsed_days: r.elapsed_days,
-    scheduled_days: r.scheduled_days,
-    reps: r.reps,
-    lapses: r.lapses,
-    state: r.state,
-    last_review: r.last_review,
-    question: JSON.parse(r.question),
-    answer: JSON.parse(r.answer),
-    media: JSON.parse(r.media),
-    noteFields: r.note_fields ? JSON.parse(r.note_fields) : {},
-    provenance: r.source_id
-      ? {
-          sourceId: r.source_id,
-          kind: r.source_kind,
-          filename: r.source_filename,
-          location: r.source_location ? JSON.parse(r.source_location) : undefined,
-        }
-      : undefined,
-  }));
+  const withFields: any[] = [];
+  for (const r of rows as any[]) {
+    try {
+      withFields.push({
+        id: r.id,
+        note_id: r.note_id,
+        deck_id: r.deck_id,
+        card_type: r.card_type,
+        due: r.due,
+        stability: r.stability,
+        difficulty: r.difficulty,
+        elapsed_days: r.elapsed_days,
+        scheduled_days: r.scheduled_days,
+        reps: r.reps,
+        lapses: r.lapses,
+        state: r.state,
+        last_review: r.last_review,
+        question: JSON.parse(r.question),
+        answer: JSON.parse(r.answer),
+        media: JSON.parse(r.media),
+        noteFields: r.note_fields ? JSON.parse(r.note_fields) : {},
+        provenance: r.source_id
+          ? {
+              sourceId: r.source_id,
+              kind: r.source_kind,
+              filename: r.source_filename,
+              location: r.source_location ? JSON.parse(r.source_location) : undefined,
+            }
+          : undefined,
+      });
+    } catch (err) {
+      // A single corrupted card payload must not take down the whole queue
+      // fetch — skip it and log, the rest of the queue is still usable.
+      console.error(`study queue: skipping corrupted card row id=${r.id}`, err);
+    }
+  }
 
   res.json(withFields);
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { addCorrection, reGateExistingAnalyses } from "../src/lib/corrections.js";
 import { disambiguateReading } from "../src/lib/jp/readings.js";
 import { db } from "../src/db/index.js";
@@ -166,6 +166,111 @@ describe("re-gating existing analyses and cards on correction", () => {
     const rowB = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteB) as any;
     expect(rowA.label).toBe("うわて");
     expect(rowB.label).toBe("じょうず"); // untouched: different deck
+  });
+
+  it("skips a row with corrupted alternatives JSON but still updates the other matching rows", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Test Deck Corrupt')").run().lastInsertRowid);
+      const noteGood1 = Number(
+        db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+          .run(deckId).lastInsertRowid
+      );
+      const noteBad = Number(
+        db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+          .run(deckId).lastInsertRowid
+      );
+      const noteGood2 = Number(
+        db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+          .run(deckId).lastInsertRowid
+      );
+
+      const insertAnalysis = db.prepare(`
+        INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+        VALUES (?, 'reading', '走る', 'はしる', 0.4, 'low', 1, ?, '[]', '{}')
+      `);
+      insertAnalysis.run(noteGood1, "[]");
+      // Corrupted alternatives payload, e.g. from a bad prior import or manual DB edit.
+      insertAnalysis.run(noteBad, "{not valid json");
+      insertAnalysis.run(noteGood2, "[]");
+
+      const { analysesUpdated } = reGateExistingAnalyses({
+        kind: "reading",
+        surface: "走る",
+        value: "そうる",
+        scope: "global",
+      });
+
+      // Only the two uncorrupted rows count as updated; the corrupted one is
+      // skipped rather than aborting the whole batch.
+      expect(analysesUpdated).toBe(2);
+      expect(errorSpy).toHaveBeenCalled();
+      expect(String(errorSpy.mock.calls[0][0])).toContain("note_analyses row id=");
+
+      const rowGood1 = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteGood1) as any;
+      const rowBad = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteBad) as any;
+      const rowGood2 = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteGood2) as any;
+
+      expect(rowGood1.label).toBe("そうる");
+      expect(rowGood2.label).toBe("そうる");
+      // The corrupted row is left untouched rather than half-patched.
+      expect(rowBad.label).toBe("はしる");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("skips a card with corrupted question/answer JSON but still patches other cards on the same note", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Test Deck Card Corrupt')").run().lastInsertRowid);
+      const noteId = Number(
+        db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+          .run(deckId).lastInsertRowid
+      );
+      db.prepare(`
+        INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+        VALUES (?, 'reading', '泳ぐ', 'えいぐ', 0.4, 'low', 1, '[]', '[]', '{}')
+      `).run(noteId);
+
+      const goodCardId = Number(
+        db.prepare(`
+          INSERT INTO cards (note_id, deck_id, card_type, question, answer)
+          VALUES (?, ?, 'vocab', ?, ?)
+        `).run(
+          noteId,
+          deckId,
+          JSON.stringify({ text: "泳ぐ", reading: "えいぐ", readingUncertain: true }),
+          JSON.stringify({ text: "to swim" })
+        ).lastInsertRowid
+      );
+      const badCardId = Number(
+        db.prepare(`
+          INSERT INTO cards (note_id, deck_id, card_type, question, answer)
+          VALUES (?, ?, 'vocab', ?, ?)
+        `).run(noteId, deckId, "{not valid json", JSON.stringify({ text: "to swim" })).lastInsertRowid
+      );
+
+      const { analysesUpdated, cardsUpdated } = reGateExistingAnalyses({
+        kind: "reading",
+        surface: "泳ぐ",
+        value: "およぐ",
+        scope: "global",
+      });
+
+      expect(analysesUpdated).toBe(1);
+      // Only the good card counts as updated; the corrupted one is skipped.
+      expect(cardsUpdated).toBe(1);
+      expect(errorSpy).toHaveBeenCalled();
+
+      const goodCard = db.prepare("SELECT question FROM cards WHERE id = ?").get(goodCardId) as any;
+      const badCard = db.prepare("SELECT question FROM cards WHERE id = ?").get(badCardId) as any;
+      expect(JSON.parse(goodCard.question).reading).toBe("およぐ");
+      // Corrupted row left exactly as-is, not silently dropped or replaced.
+      expect(badCard.question).toBe("{not valid json");
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("does not back-apply a deck-scoped correction when no deckId is given", () => {

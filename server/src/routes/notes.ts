@@ -87,23 +87,32 @@ notesRouter.get("/:id/analysis", (req, res) => {
     )
     .all(id) as any[];
 
-  res.json(
-    rows.map((r) => ({
-      kind: r.kind,
-      surface: r.surface,
-      label: r.label,
-      span: r.span_start == null ? undefined : { start: r.span_start, end: r.span_end },
-      confidence: r.confidence,
-      band: r.band,
-      needsReview: !!r.needs_review,
-      analyzer: r.analyzer_name
-        ? { name: r.analyzer_name, version: r.analyzer_version }
-        : undefined,
-      evidence: JSON.parse(r.evidence),
-      alternatives: JSON.parse(r.alternatives),
-      payload: JSON.parse(r.payload),
-      correctedByUser: !!r.corrected_by_user,
-      createdAt: r.created_at,
-    }))
-  );
+  const analyses: any[] = [];
+  for (const r of rows) {
+    try {
+      analyses.push({
+        kind: r.kind,
+        surface: r.surface,
+        label: r.label,
+        span: r.span_start == null ? undefined : { start: r.span_start, end: r.span_end },
+        confidence: r.confidence,
+        band: r.band,
+        needsReview: !!r.needs_review,
+        analyzer: r.analyzer_name
+          ? { name: r.analyzer_name, version: r.analyzer_version }
+          : undefined,
+        evidence: JSON.parse(r.evidence),
+        alternatives: JSON.parse(r.alternatives),
+        payload: JSON.parse(r.payload),
+        correctedByUser: !!r.corrected_by_user,
+        createdAt: r.created_at,
+      });
+    } catch (err) {
+      // A corrupted analysis row must not break the whole analysis listing
+      // for a note — skip it and log, the rest remain inspectable.
+      console.error(`note analysis: skipping corrupted note_analyses row for note ${id}`, err);
+    }
+  }
+
+  res.json(analyses);
 });
