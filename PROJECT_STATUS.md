@@ -4,12 +4,47 @@ A living record of where this project stands. Kept in sync with the GitHub repo
 and updated on every change. Last synced commit and date are recorded below.
 
 - **My branch (Claude):** `claude/science-learning-app-fsrs-xnkrwu`
-- **Last synced commit (mine):** *(this commit)* — Reconcile ANTILOG: gating fixes, client provenance UI, redesign
+- **Last synced commit (mine):** *(this commit)* — apkg zip-bomb guard + client vocab/pitch card rendering
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
 - **Last synced commit (Antigravity):** `b626995` — Docs: Update project status
 - **Last updated:** 2026-06-22
-- **Tests:** 51 passing (9 files) · typecheck clean · build clean
+- **Tests:** 51 passing (9 files) · typecheck clean · build clean (server + client)
+
+### Hardening: apkg zip-bomb guard (2026-06-22)
+`apkgImporter.ts` now checks `entry.header.size` (the zip's *declared*
+uncompressed size, read from header metadata without decompressing) against a
+200MB per-entry / 1GB total cap before any entry is decompressed. Closes a gap
+where multer's upload-size limit only bounded the compressed `.apkg` on disk —
+a small crafted archive could otherwise decompress to gigabytes and exhaust
+memory. New test file `apkgImporter.security.test.ts` covers both the
+rejection path and the (still-functional) normal-import path.
+
+### Client: vocab/pitch card rendering fix (2026-06-22)
+The server's `CardType` union (`vocab | cloze | scramble | listening | pitch`,
+`cardgen.ts`) was only partially modeled on the client — `StudyCard` in
+`client/src/lib/api.ts` had no `"vocab"`/`"pitch"` variants, so both silently
+rendered via the generic `BasicCard`. For `pitch` cards this was a real bug,
+not just a display nicety: a pitch card's `answer` is `{ pitch: PitchInfo }`
+with no `.text` field at all, so the "answer" rendered blank — pitch cards
+were non-functional in the UI.
+- Added `"vocab"` and `"pitch"` variants to `StudyCard` with the real field
+  shapes from `cardgen.ts` (`furigana`, `reading`, `readingUncertain`,
+  `readingAlternatives`, `morae`, `pitch`, `lang`, `prompt`).
+- Added a `Furigana` component (`<ruby>`/`<rt>`) — this is the first place in
+  the client that renders furigana at all, even though `ClozeCard` and others
+  have carried `furigana` data since the provenance UI landed. Readings the
+  analyzer couldn't confirm (`uncertain: true`) render with a visible `?` and
+  warning color rather than being presented as settled fact.
+- Added a `PitchDiagram` component rendering `PitchInfo`'s per-mora H/L
+  pattern as a step diagram, plus the accent type and following-particle
+  pitch.
+- Added `VocabCard` and `PitchCard` components wired into `StudyCardView`'s
+  switch in place of the old `default: BasicCard` fallback for those two
+  types.
+- Verified via `tsc -b && vite build` (client) and the full server gate
+  (typecheck/test/build) — no live browser available in this container, so
+  visual rendering was not screenshot-verified.
 
 ### Reconciliation note (2026-06-22, ANTILOG → mine, round 2)
 Evaluated 4 more commits from `ANTILOG` (`61391df`→`b626995`): backend

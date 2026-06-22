@@ -1,10 +1,53 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchNoteAnalysis, type NoteAnalysis, type StudyCard } from "../lib/api";
+import { fetchNoteAnalysis, type FuriganaSegment, type NoteAnalysis, type PitchInfo, type StudyCard } from "../lib/api";
 import "./CardTypes.css";
 
 interface Props {
   card: StudyCard;
   onRate: (rating: 1 | 2 | 3 | 4) => void;
+}
+
+// Renders kanji with readings as <ruby>/<rt>, flagging segments whose reading
+// the analyzer couldn't confirm rather than presenting them as settled fact.
+function Furigana({ segments }: { segments?: FuriganaSegment[] }) {
+  if (!segments || segments.length === 0) return null;
+  return (
+    <span className="furigana-line">
+      {segments.map((seg, i) =>
+        seg.reading ? (
+          <ruby key={i} className={seg.uncertain ? "furigana-uncertain" : undefined}>
+            {seg.text}
+            <rt>{seg.reading}{seg.uncertain ? "?" : ""}</rt>
+          </ruby>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        )
+      )}
+    </span>
+  );
+}
+
+// Pitch accent as a high/low step diagram over the word's morae.
+function PitchDiagram({ pitch, morae }: { pitch: PitchInfo; morae?: string[] }) {
+  const units = morae && morae.length ? morae : pitch.morae;
+  return (
+    <div className="pitch-diagram">
+      <div className="pitch-track">
+        {units.map((mora, i) => {
+          const level = pitch.pattern[i] ?? "L";
+          return (
+            <div key={i} className={`pitch-mora pitch-${level === "H" ? "high" : "low"}`}>
+              <span className="pitch-mora-text">{mora}</span>
+            </div>
+          );
+        })}
+        <div className={`pitch-mora pitch-${pitch.particle === "H" ? "high" : "low"} pitch-particle`}>
+          <span className="pitch-mora-text">…</span>
+        </div>
+      </div>
+      <div className="pitch-label">{pitch.type} (accent on mora {pitch.accent || "—"})</div>
+    </div>
+  );
 }
 
 function speak(text: string) {
@@ -231,6 +274,57 @@ function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: 
   );
 }
 
+function VocabCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "vocab" }>; onRate: Props["onRate"] }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="card-surface">
+      <Media media={card.media} />
+      {card.question.prompt && <div className="card-prompt-label">{card.question.prompt}</div>}
+      <div className="card-prompt">
+        {card.question.furigana ? <Furigana segments={card.question.furigana} /> : card.question.text}
+      </div>
+      {revealed && (
+        <div className="card-answer">
+          {card.answer.furigana ? <Furigana segments={card.answer.furigana} /> : card.answer.text}
+        </div>
+      )}
+      {!revealed ? (
+        <button className="text-input" onClick={() => setRevealed(true)}>
+          Show answer
+        </button>
+      ) : (
+        <>
+          <RatingRow onRate={onRate} />
+          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function PitchCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "pitch" }>; onRate: Props["onRate"] }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="card-surface">
+      <Media media={card.media} />
+      <div className="card-prompt">
+        {card.question.furigana ? <Furigana segments={card.question.furigana} /> : card.question.text}
+      </div>
+      {revealed && <PitchDiagram pitch={card.answer.pitch} morae={card.question.morae} />}
+      {!revealed ? (
+        <button className="text-input" onClick={() => setRevealed(true)}>
+          Show pitch accent
+        </button>
+      ) : (
+        <>
+          <RatingRow onRate={onRate} />
+          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function StudyCardView({ card, onRate }: Props) {
   switch (card.card_type) {
     case "cloze":
@@ -239,6 +333,10 @@ export default function StudyCardView({ card, onRate }: Props) {
       return <ListeningCard card={card as Extract<StudyCard, { card_type: "listening" }>} onRate={onRate} />;
     case "scramble":
       return <ScrambleCard card={card as Extract<StudyCard, { card_type: "scramble" }>} onRate={onRate} />;
+    case "vocab":
+      return <VocabCard card={card as Extract<StudyCard, { card_type: "vocab" }>} onRate={onRate} />;
+    case "pitch":
+      return <PitchCard card={card as Extract<StudyCard, { card_type: "pitch" }>} onRate={onRate} />;
     case "basic":
     default:
       return <BasicCard card={card as Extract<StudyCard, { card_type: "basic" }>} onRate={onRate} />;

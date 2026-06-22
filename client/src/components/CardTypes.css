@@ -271,10 +271,86 @@ button.text-input:hover {
   flex: 1; 
 }
 
-.analysis-conf { 
-  color: var(--text); 
-  font-size: 0.75rem; 
+.analysis-conf {
+  color: var(--text);
+  font-size: 0.75rem;
   background: var(--code-bg);
   padding: 0.25rem 0.5rem;
   border-radius: 1rem;
+}
+
+.card-prompt-label {
+  font-size: 0.875rem;
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.furigana-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.1em;
+}
+
+.furigana-line ruby {
+  ruby-position: over;
+}
+
+.furigana-line rt {
+  font-size: 0.6em;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.furigana-line ruby.furigana-uncertain rt {
+  color: var(--warning);
+  opacity: 1;
+}
+
+.pitch-diagram {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pitch-track {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.pitch-mora {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-family: var(--heading);
+}
+
+.pitch-mora.pitch-high {
+  background: var(--accent-bg);
+  color: var(--accent);
+  align-self: flex-start;
+}
+
+.pitch-mora.pitch-low {
+  background: var(--code-bg);
+  color: var(--text);
+  align-self: flex-end;
+}
+
+.pitch-mora.pitch-particle {
+  opacity: 0.6;
+}
+
+.pitch-label {
+  font-size: 0.875rem;
+  color: var(--text);
+  opacity: 0.8;
 }

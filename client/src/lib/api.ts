@@ -13,6 +13,31 @@ export interface Provenance {
   location?: any;
 }
 
+export interface FuriganaSegment {
+  text: string;
+  reading?: string;
+  uncertain?: boolean;
+}
+
+export interface PitchInfo {
+  accent: number;
+  type: string;
+  pattern: ("H" | "L")[];
+  particle: "H" | "L";
+  morae: string[];
+}
+
+interface JpFields {
+  furigana?: FuriganaSegment[];
+  reading?: string;
+  readingUncertain?: boolean;
+  readingAlternatives?: string[];
+  morae?: string[];
+  pitch?: PitchInfo;
+  lang?: "ja" | "en";
+  prompt?: string;
+}
+
 export type StudyCard = {
   id: number;
   note_id: number;
@@ -23,8 +48,10 @@ export type StudyCard = {
 } & (
   | { card_type: "basic"; question: { text: string }; answer: { text: string } }
   | { card_type: "cloze"; question: { text: string }; answer: { text: string } }
-  | { card_type: "listening"; question: { tts: string }; answer: { text: string } }
+  | { card_type: "listening"; question: { tts: string } & JpFields; answer: { text: string } & JpFields }
   | { card_type: "scramble"; question: { words: string[] }; answer: { words: string[] } }
+  | { card_type: "vocab"; question: { text: string } & JpFields; answer: { text: string } & JpFields }
+  | { card_type: "pitch"; question: { text: string } & JpFields; answer: { pitch: PitchInfo } }
 );
 
 export interface NoteAnalysis {
