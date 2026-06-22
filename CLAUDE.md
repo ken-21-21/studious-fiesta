@@ -8,9 +8,15 @@ This repo is edited by **two** agents, on **separate branches**:
   own branch **`ANTILOG`**, but never concurrently with my work. Because of
   that, `ANTILOG` should always mirror my latest: **after every change I
   push to my branch with green quality gates, I also push that same commit
-  to `ANTILOG`** (fast-forward if possible, otherwise overwrite — the user
-  has explicitly authorized this since they never run both at once, so
-  there's nothing on `ANTILOG` to lose by overwriting it).
+  to `ANTILOG`** — the user has explicitly authorized overwriting it, since
+  they never run both tools at once.
+
+  **Safety check before every `ANTILOG` push:** confirm
+  `git merge-base --is-ancestor origin/ANTILOG <my-branch>` succeeds (i.e.
+  `ANTILOG`'s current tip is already contained in my history) before
+  pushing. If it fails, that means unreconciled Antigravity work exists that
+  I haven't seen yet — stop and run the reconciliation protocol below
+  instead of overwriting it.
 
 The git remote is the only shared channel. I run in an ephemeral clone, so I
 only see Antigravity's work **after it is committed and pushed** to its
@@ -24,8 +30,10 @@ step above.
 
 1. **Detect.**
    - `git fetch origin` (all branches, or at least mine + `ANTILOG`).
-   - Compare `origin/ANTILOG`'s tip against the **Last synced commit**
-     recorded in `PROJECT_STATUS.md` for that branch.
+   - Find where `ANTILOG` diverges from my branch: `git merge-base
+     origin/ANTILOG origin/<my-branch>` gives the anchor directly — no
+     separate doc note to maintain, since both branches converge after every
+     sync (see the safety check above).
    - Read the diff/log on `ANTILOG` since that anchor — this is the full set
      of external changes to evaluate, not just the latest commit.
 
@@ -45,8 +53,8 @@ step above.
    newer intent unless it breaks an invariant above.
 
 4. **Verify + record.** After reconciling: run typecheck + tests + build,
-   update `PROJECT_STATUS.md` (Last synced commit for `ANTILOG`, date, and a
-   short note of what was kept/dropped), commit, and push to my branch.
+   add a dated note to `PROJECT_STATUS.md` of what was kept/dropped, commit,
+   and push to my branch.
 
 5. **Sync `ANTILOG` back to match.** Push the same commit onto `ANTILOG` so
    it mirrors my branch again (see the sync rule above) — this is what
@@ -61,6 +69,7 @@ to every push, including the `ANTILOG` sync — never sync a change onto
 `ANTILOG` that hasn't passed the gates on my branch first.
 
 ## Pointers
-- `PROJECT_STATUS.md` — living status; its "Last synced commit" lines are the
-  reconciliation anchors (one per agent/branch) and must be updated on every
-  change.
+- `PROJECT_STATUS.md` — living status, updated on every change. The
+  reconciliation anchor is no longer tracked here in writing — it's derived
+  from git (`git merge-base`) since the two branches converge after every
+  sync, so there's nothing to keep manually in sync.

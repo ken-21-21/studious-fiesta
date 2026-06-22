@@ -1,14 +1,14 @@
 # Project Status
 
 A living record of where this project stands. Kept in sync with the GitHub repo
-and updated on every change. Last synced commit and date are recorded below.
+and updated on every change.
 
-- **My branch (Claude):** `claude/science-learning-app-fsrs-xnkrwu`
-- **Last synced commit (mine):** *(this commit)* — hardening: pitch-data retry
-  backoff + deck/source-scoped corrections re-gating
-- **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
-  reconciliation protocol)
-- **Last synced commit (Antigravity):** `b626995` — Docs: Update project status
+- **My branch (Claude):** `claude/science-learning-app-fsrs-xnkrwu` — the
+  primary branch; treated as source of truth.
+- **Antigravity's branch:** `ANTILOG` — kept mirrored to my branch after every
+  push (see `CLAUDE.md` for the sync rule and reconciliation protocol). No
+  manually-tracked "last synced commit" anchor anymore — it's derived from
+  git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-22
 - **Tests:** 61 passing (11 files) · typecheck clean · build clean (server + client)
 
@@ -264,11 +264,11 @@ Quality gates: `npm run typecheck`, `npm test`, `npm run build` (all in `server/
 ---
 
 ## Notes for maintainers
-- This file is updated whenever the repo changes; treat the "Last synced commit"
-  line as the source of truth for what state it describes.
+- This file is updated whenever the repo changes; the top section reflects
+  current state, not a point-in-time snapshot.
 - The remote execution environment is ephemeral — only committed files survive,
   which is why this status lives in the repo rather than as an untracked file.
 - **Two agents edit this repo** (Claude + Antigravity). See `CLAUDE.md` for the
   reconciliation protocol. Claude's commits are authored `Claude
-  <noreply@anthropic.com>`; anything else on the branch is an external change to
-  reconcile. The "Last synced commit" above is the detection anchor.
+  <noreply@anthropic.com>`; anything else on `ANTILOG` since the last
+  `git merge-base` with my branch is an external change to reconcile.
