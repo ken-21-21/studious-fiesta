@@ -30,8 +30,34 @@ export function pickClozeWord(sentence: string): { word: string; index: number }
 export function makeEnglishCloze(sentence: string): { text: string; answer: string } | null {
   const pick = pickClozeWord(sentence);
   if (!pick) return null;
-  const re = new RegExp(`\\b${pick.word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
-  const text = sentence.replace(re, "_____");
+
+  const doc = nlp.readDoc(sentence);
+  const tokens = doc.tokens().out(its.value) as string[];
+  
+  let occurrence = 0;
+  for (let i = 0; i < pick.index; i++) {
+    if (tokens[i] === pick.word) occurrence++;
+  }
+
+  const escaped = pick.word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\b${escaped}\\b`, "g");
+  let text = sentence;
+  let currentOccurrence = 0;
+  let match;
+  
+  while ((match = re.exec(sentence)) !== null) {
+    if (currentOccurrence === occurrence) {
+      text = sentence.substring(0, match.index) + "_____" + sentence.substring(match.index + pick.word.length);
+      break;
+    }
+    currentOccurrence++;
+  }
+
+  if (text === sentence) {
+    const fallbackRe = new RegExp(`\\b${escaped}\\b`);
+    text = sentence.replace(fallbackRe, "_____");
+  }
+
   if (text === sentence) return null;
   return { text, answer: pick.word };
 }

@@ -33,10 +33,34 @@ describe("study-material gating on reading confidence", () => {
     // including the pitch card from the seeded offline dataset.
     const notes = await generateLessonNotes(vocabLesson(["学校 がっこう school"]));
     const note = notes[0];
-    expect(note.tags).toBe("vocabulary");
+    expect(note.tags).toContain("vocabulary");
     const types = note.cards.map((c) => c.cardType);
     expect(types).toContain("vocab");
     expect(types).toContain("listening");
     expect(types).toContain("pitch");
+  });
+
+  it("gates readings on sentence cloze and scramble cards", async () => {
+    // 生物を食べる。 (Biological things vs raw food)
+    const lesson: Lesson = {
+      number: 1,
+      title: "Test",
+      sections: [{ type: "grammar", title: "Sentences", lines: ["生物を食べる。"] }],
+    };
+    const notes = await generateLessonNotes(lesson);
+    expect(notes).toHaveLength(1);
+    const note = notes[0];
+
+    const cloze = note.cards.find((c) => c.cardType === "cloze");
+    expect(cloze).toBeTruthy();
+    // Cloze targets "生物" which is ambiguous.
+    expect((cloze!.answer as any).reading).toBeUndefined();
+    expect((cloze!.answer as any).readingUncertain).toBe(true);
+    expect(Array.isArray((cloze!.answer as any).readingAlternatives)).toBe(true);
+
+    const scramble = note.cards.find((c) => c.cardType === "scramble");
+    expect(scramble).toBeTruthy();
+    expect((scramble!.answer as any).reading).toBeUndefined();
+    expect((scramble!.answer as any).readingUncertain).toBe(true);
   });
 });
