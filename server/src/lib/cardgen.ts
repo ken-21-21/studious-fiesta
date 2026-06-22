@@ -34,7 +34,17 @@ const BLANK = "＿＿＿";
 const PUNCT_POS = "記号";
 
 function furiganaOf(tokens: AnalyzedToken[]): FuriganaSegment[] {
-  return tokens.map((t) => (t.furigana ? { text: t.surface, reading: t.furigana } : { text: t.surface }));
+  return tokens.map((t) => {
+    if (t.furigana) return { text: t.surface, reading: t.furigana };
+    // A kanji-bearing token whose reading we declined to commit to must be
+    // flagged, not silently rendered as if it were a kana/punctuation token
+    // with nothing to show — that would hide the analyzer's uncertainty
+    // from the very surface where the user would otherwise notice it.
+    if (t.readingDecision.needsReview && t.readingDecision.selected) {
+      return { text: t.surface, uncertain: true };
+    }
+    return { text: t.surface };
+  });
 }
 
 function readingOf(tokens: AnalyzedToken[]): string {

@@ -64,4 +64,38 @@ describe("study-material gating on reading confidence", () => {
     expect((scramble!.answer as any).reading).toBeUndefined();
     expect((scramble!.answer as any).readingUncertain).toBe(true);
   });
+
+  it("flags an ambiguous word's own furigana segment as uncertain, not silently blank", async () => {
+    // 開く (あく/ひらく) has no dominant reading. The per-segment furigana
+    // array (used to render ruby text on listening/cloze cards) must mark
+    // it `uncertain: true` rather than omitting the reading with no flag —
+    // an unmarked omission is visually indistinguishable from a particle or
+    // punctuation token that simply has nothing to gloss.
+    const lesson: Lesson = {
+      number: 1,
+      title: "Test",
+      sections: [{ type: "dialogue", title: "Sentences", lines: ["ドアが開く音がした。"] }],
+    };
+    const notes = await generateLessonNotes(lesson);
+    const note = notes[0];
+    const listening = note.cards.find((c) => c.cardType === "listening");
+    expect(listening).toBeTruthy();
+    const furigana = (listening!.answer as any).furigana as Array<{
+      text: string;
+      reading?: string;
+      uncertain?: boolean;
+    }>;
+    expect(Array.isArray(furigana)).toBe(true);
+    const seg = furigana.find((s) => s.text === "開く");
+    expect(seg).toBeTruthy();
+    expect(seg!.reading).toBeUndefined();
+    expect(seg!.uncertain).toBe(true);
+
+    // A confidently-read kanji word in the same sentence keeps its reading
+    // and is not flagged uncertain.
+    const oto = furigana.find((s) => s.text === "音");
+    expect(oto).toBeTruthy();
+    expect(oto!.reading).toBe("おと");
+    expect(oto!.uncertain).toBeFalsy();
+  });
 });

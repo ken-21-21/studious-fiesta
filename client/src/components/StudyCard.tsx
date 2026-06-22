@@ -27,6 +27,14 @@ function Furigana({ segments }: { segments?: FuriganaSegment[] }) {
             {seg.text}
             <rt>{seg.reading}{seg.uncertain ? "?" : ""}</rt>
           </ruby>
+        ) : seg.uncertain ? (
+          // Reading withheld entirely (not even a best guess) — still must
+          // not look identical to plain kana/punctuation text; mark it so
+          // the user knows this word's reading needs review.
+          <ruby key={i} className="furigana-uncertain">
+            {seg.text}
+            <rt>?</rt>
+          </ruby>
         ) : (
           <span key={i}>{seg.text}</span>
         )
@@ -307,7 +315,11 @@ function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type:
           onChange={(e) => setTyped(e.target.value)}
         />
       )}
-      {revealed && <div className="card-answer">{card.answer.text}</div>}
+      {revealed && (
+        <div className="card-answer">
+          {card.answer.furigana ? <Furigana segments={card.answer.furigana} /> : card.answer.text}
+        </div>
+      )}
       {!revealed ? (
         <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
