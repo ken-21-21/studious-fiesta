@@ -6,15 +6,41 @@ export interface Deck {
   due_count: number;
 }
 
-export interface StudyCard {
+export interface Provenance {
+  sourceId: number;
+  kind: string;
+  filename: string;
+  location?: any;
+}
+
+export type StudyCard = {
   id: number;
   note_id: number;
   deck_id: number;
-  card_type: "basic" | "cloze" | "listening" | "scramble";
-  question: any;
-  answer: any;
   media: { image?: string; audio?: string };
   noteFields: Record<string, string>;
+  provenance?: Provenance;
+} & (
+  | { card_type: "basic"; question: { text: string }; answer: { text: string } }
+  | { card_type: "cloze"; question: { text: string }; answer: { text: string } }
+  | { card_type: "listening"; question: { tts: string }; answer: { text: string } }
+  | { card_type: "scramble"; question: { words: string[] }; answer: { words: string[] } }
+);
+
+export interface NoteAnalysis {
+  kind: "reading" | "grammar";
+  surface: string;
+  label: string;
+  span?: { start: number; end: number };
+  confidence: number;
+  band: "high" | "medium" | "low";
+  needsReview: boolean;
+  analyzer?: { name: string; version: string };
+  evidence: any;
+  alternatives: any;
+  payload: any;
+  correctedByUser: boolean;
+  createdAt: string;
 }
 
 export async function fetchDecks(): Promise<Deck[]> {
@@ -64,4 +90,10 @@ export async function importTextbook(file: File, deckName: string) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Import failed");
   return data;
+}
+
+export async function fetchNoteAnalysis(noteId: number): Promise<NoteAnalysis[]> {
+  const res = await fetch(`/api/notes/${noteId}/analysis`);
+  if (!res.ok) throw new Error("Failed to load note analysis");
+  return res.json();
 }

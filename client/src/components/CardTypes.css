@@ -102,3 +102,61 @@
 .rating-hard { background: #ea580c; }
 .rating-good { background: #16a34a; }
 .rating-easy { background: #2563eb; }
+
+.analysis-panel {
+  margin-top: 16px;
+  width: 100%;
+  text-align: left;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.analysis-toggle {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.9rem;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.analysis-content {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.provenance-info {
+  margin-bottom: 8px;
+  color: #475569;
+}
+
+.analysis-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analysis-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: white;
+  border: 1px solid #e2e8f0;
+}
+
+.analysis-item.band-low { border-left: 3px solid #ef4444; }
+.analysis-item.band-medium { border-left: 3px solid #eab308; }
+.analysis-item.band-high { border-left: 3px solid #22c55e; }
+
+.analysis-surface { font-weight: bold; }
+.analysis-label { color: #475569; flex: 1; }
+.analysis-conf { color: #94a3b8; font-size: 0.8rem; }
