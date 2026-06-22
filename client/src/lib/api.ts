@@ -109,14 +109,57 @@ export async function importApkg(file: File, deckName: string) {
   return data;
 }
 
-export async function importTextbook(file: File, deckName: string) {
+export interface ImportJob {
+  id: number;
+  kind: string;
+  filename: string;
+  status: "queued" | "running" | "done" | "error";
+  message?: string | null;
+  progress?: number | null;
+  total?: number | null;
+  cards_created?: number | null;
+  result?: string | null;
+  error?: string | null;
+}
+
+export async function fetchImportJob(jobId: number): Promise<ImportJob> {
+  const res = await fetch(`/api/import/jobs/${jobId}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Failed to load import job");
+  return data;
+}
+
+// Textbook import runs as a background job on the server (returns 202 +
+// jobId immediately). Poll until it reaches a terminal state so the caller
+// gets a real result instead of guessing from the initial response.
+export async function importTextbook(
+  file: File,
+  deckName: string,
+  onProgress?: (job: ImportJob) => void
+): Promise<{ decks: { id: number; name: string; cards: number }[]; totalCards: number }> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("deckName", deckName);
   const res = await fetch("/api/import/textbook", { method: "POST", body: fd });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Import failed");
-  return data;
+
+  const jobId = data.jobId;
+  const POLL_MS = 500;
+  const MAX_WAIT_MS = 5 * 60 * 1000;
+  const start = Date.now();
+  while (Date.now() - start < MAX_WAIT_MS) {
+    const job = await fetchImportJob(jobId);
+    onProgress?.(job);
+    if (job.status === "done") {
+      return job.result ? JSON.parse(job.result) : { decks: [], totalCards: 0 };
+    }
+    if (job.status === "error") {
+      throw new Error(job.error ?? "Import failed");
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  throw new Error("Import timed out");
 }
 
 export async function fetchNoteAnalysis(noteId: number): Promise<NoteAnalysis[]> {

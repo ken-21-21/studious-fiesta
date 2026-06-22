@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { importApkg, importTextbook } from "../lib/api";
+import { importApkg, importTextbook, type ImportJob } from "../lib/api";
 
 export default function Import() {
   const [file, setFile] = useState<File | null>(null);
@@ -23,14 +23,18 @@ export default function Import() {
     setStatus("Importing...");
     try {
       const name = deckName || file.name;
-      const result = isApkg
-        ? await importApkg(file, name)
-        : await importTextbook(file, name);
-      setStatus(
-        isApkg
-          ? `Imported ${result.cardsImported} cards.`
-          : `Created ${result.cardsCreated} cards from ${result.sentencesProcessed} sentences.`
-      );
+      if (isApkg) {
+        const result = await importApkg(file, name);
+        setStatus(`Imported ${result.cardsImported} cards.`);
+      } else {
+        const result = await importTextbook(file, name, (job: ImportJob) => {
+          if (job.message) setStatus(job.message);
+        });
+        const deckCount = result.decks.length;
+        setStatus(
+          `Created ${deckCount} deck${deckCount === 1 ? "" : "s"}, ${result.totalCards} card(s).`
+        );
+      }
       setTimeout(() => navigate("/"), 1200);
     } catch (err: any) {
       setStatus(`Error: ${err.message}`);
