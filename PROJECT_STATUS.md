@@ -7,7 +7,7 @@ and updated on every change. Last synced commit and date are recorded below.
 - **Last synced commit (mine):** `df083a8` — Switch two-agent workflow to separate branches
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
-- **Last synced commit (Antigravity):** `6073629` — Swarm: Full-spectrum hardening, UX polish, and NLP bugfixes
+- **Last synced commit (Antigravity):** `aad09bf` — Phase D: Implement universal Media Extractor (OCR, ASR, EPUB, Subtitles)
 - **Last updated:** 2026-06-22
 - **Tests:** 36 passing (6 files) · typecheck clean · build clean
 
