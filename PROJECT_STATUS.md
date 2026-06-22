@@ -7,7 +7,7 @@ and updated on every change. Last synced commit and date are recorded below.
 - **Last synced commit (mine):** `df083a8` — Switch two-agent workflow to separate branches
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
-- **Last synced commit (Antigravity):** `b2a1397` — Ingestion Engine Hardening (Streams & DB Chunks)
+- **Last synced commit (Antigravity):** `f0b42bb` — API Hardening (N+1 query fix)
 - **Last updated:** 2026-06-22
 - **Tests:** 36 passing (6 files) · typecheck clean · build clean
 
