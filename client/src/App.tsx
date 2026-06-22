@@ -5,17 +5,23 @@ import Study from "./pages/Study";
 
 export default function App() {
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24, fontFamily: "system-ui, sans-serif" }}>
-      <header style={{ marginBottom: 24 }}>
-        <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-          <h1 style={{ margin: 0 }}>FSRS Learn</h1>
+    <>
+      <header className="glass-panel app-header">
+        <Link to="/" className="app-title-link">
+          <h1 className="app-title">FSRS Learn</h1>
         </Link>
+        <nav className="nav-links">
+          <Link to="/" className="nav-link"><button>Decks</button></Link>
+          <Link to="/import" className="nav-link"><button>Import</button></Link>
+        </nav>
       </header>
-      <Routes>
-        <Route path="/" element={<Decks />} />
-        <Route path="/import" element={<Import />} />
-        <Route path="/study" element={<Study />} />
-      </Routes>
-    </div>
+      <main className="main-content">
+        <Routes>
+          <Route path="/" element={<Decks />} />
+          <Route path="/import" element={<Import />} />
+          <Route path="/study" element={<Study />} />
+        </Routes>
+      </main>
+    </>
   );
 }

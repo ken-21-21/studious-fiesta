@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { deleteDeck, fetchDecks, type Deck } from "../lib/api";
+import { SkeletonLoader, ErrorMessage } from "../components/Loaders";
 
 export default function Decks() {
   const [decks, setDecks] = useState<Deck[]>([]);
@@ -28,53 +29,58 @@ export default function Decks() {
     }
   };
 
-  if (loading) return <p>Loading decks...</p>;
+  if (loading) return (
+    <div>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <h2>Decks</h2>
+      </div>
+      <SkeletonLoader />
+      <div style={{ marginTop: '16px' }}>
+        <SkeletonLoader />
+      </div>
+    </div>
+  );
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2>Decks</h2>
-        <Link to="/import">+ Import</Link>
+        <Link to="/import" className="btn-primary" style={{ textDecoration: 'none' }}><button>+ Import</button></Link>
       </div>
+      
       {error && (
-        <p style={{ color: "#dc2626" }}>
-          {error} <button onClick={load}>Retry</button>
-        </p>
+        <div style={{ marginBottom: '24px' }}>
+          <ErrorMessage message={error} />
+          <button onClick={load} style={{ marginTop: '16px' }}>Retry</button>
+        </div>
       )}
+      
       {!error && decks.length === 0 && (
-        <p>No decks yet. Import an .apkg file or a textbook to get started.</p>
+        <div className="empty-state">
+          <p>No decks yet. Import an .apkg file or a textbook to get started.</p>
+        </div>
       )}
-      <ul style={{ listStyle: "none", padding: 0 }}>
+      
+      <ul className="deck-list">
         {decks.map((d) => (
-          <li
-            key={d.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 16px",
-              background: "#fff",
-              borderRadius: 8,
-              marginBottom: 8,
-              boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-            }}
-          >
-            <div>
+          <li key={d.id} className="deck-item">
+            <div className="deck-item-info">
               <strong>{d.name}</strong>
-              <div style={{ fontSize: 13, color: "#64748b" }}>
+              <div className="deck-item-stats">
                 {d.card_count} cards · {d.due_count} due
               </div>
             </div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <Link to={`/study?deckId=${d.id}`}>Study</Link>
-              <button onClick={() => handleDelete(d.id)}>Delete</button>
+            <div className="deck-item-actions">
+              <Link to={`/study?deckId=${d.id}`} className="btn-primary">Study</Link>
+              <button className="btn-danger" onClick={() => handleDelete(d.id)}>Delete</button>
             </div>
           </li>
         ))}
       </ul>
+      
       {decks.length > 0 && (
-        <div style={{ marginTop: 20 }}>
-          <Link to="/study">Study all due cards</Link>
+        <div className="mt-8 text-center">
+          <Link to="/study" className="btn-primary lg">Study all due cards</Link>
         </div>
       )}
     </div>

@@ -4,13 +4,36 @@ A living record of where this project stands. Kept in sync with the GitHub repo
 and updated on every change. Last synced commit and date are recorded below.
 
 - **My branch (Claude):** `claude/science-learning-app-fsrs-xnkrwu`
-- **Last synced commit (mine):** `df083a8` — Switch two-agent workflow to separate branches
+- **Last synced commit (mine):** *(this commit)* — Reconcile ANTILOG: gating fixes, client provenance UI, redesign
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
-- **Last synced commit (Antigravity):** `382c809` — branch created from my tip;
-  no Antigravity work yet
+- **Last synced commit (Antigravity):** `61391df` — Premium Frontend rebuild: Design and Wiring
 - **Last updated:** 2026-06-22
-- **Tests:** 36 passing (6 files) · typecheck clean · build clean
+- **Tests:** 49 passing (8 files) · typecheck clean · build clean
+
+### Reconciliation note (2026-06-22, ANTILOG → mine)
+Evaluated 6 commits from `ANTILOG` (latest `61391df`). Kept nearly everything;
+it strengthened the core invariant rather than weakening it:
+- **Kept:** cloze/scramble cards now gate uncertain readings the same way
+  vocab cards already did (`cardgen.ts`) — closes a real gap; English cloze
+  now blanks the *correct* occurrence of a repeated word (`en.ts`); a global
+  Express error handler (`index.ts`); new test coverage (`pitch.test.ts`,
+  `en.test.ts`); client-side provenance/analysis UI — `AnalysisPanel`,
+  `fetchNoteAnalysis`, `Provenance`/`NoteAnalysis` types (Phase F, previously
+  unstarted); a full visual redesign (`index.css`, `CardTypes.css`,
+  `Loaders.tsx`, nav links, skeleton loaders) — checked for suspicious
+  external content, found none beyond a Google Fonts `@import`.
+- **Dropped:** `server/scratch.js` — a throwaway debug script, not app code.
+- **Fixed during merge:** `cardgen.gating.test.ts`'s new sentence-cloze test
+  asserted the wrong target word for `pickJpClozeIndex`'s middle-of-content
+  selection on its original example sentence — changed the fixture sentence
+  so the test still exercises the intended gating path; removed an unused
+  `import React` in `Loaders.tsx` that broke the client build under the new
+  JSX transform.
+- **Known pre-existing gap, not introduced by this change:** `StudyCard`'s
+  discriminated union in `client/src/lib/api.ts` still doesn't cover
+  `"vocab"`/`"pitch"` card types from `cardgen.ts`. Left as-is; candidate for
+  a follow-up.
 
 ---
 
@@ -85,7 +108,7 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 | B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ⏳ Next |
 | D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ⬜ Planned |
 | E | Source-grounded Q&A (Claude API) + search/retrieval indexes | ⬜ Planned |
-| F | Client UI: surface confidence/evidence/grammar, correction & review UI | ⬜ Planned |
+| F | Client UI: surface confidence/evidence/grammar, correction & review UI | 🔶 Started (provenance/analysis panel via ANTILOG) |
 | — | Anki field-role inference (japanese/reading/meaning/audio/…) with confidence | ⬜ Planned |
 
 **Decisions locked in:** OCR/ASR = local OSS (tesseract.js / whisper); Q&A LLM =

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { StudyCard } from "../lib/api";
+import { fetchNoteAnalysis, type NoteAnalysis, type StudyCard } from "../lib/api";
 import "./CardTypes.css";
 
 interface Props {
@@ -12,6 +12,55 @@ function speak(text: string) {
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   window.speechSynthesis.speak(utter);
+}
+
+function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: StudyCard["provenance"] }) {
+  const [open, setOpen] = useState(false);
+  const [analysis, setAnalysis] = useState<NoteAnalysis[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = () => {
+    if (!open && analysis.length === 0) {
+      setLoading(true);
+      fetchNoteAnalysis(noteId)
+        .then(setAnalysis)
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    }
+    setOpen(!open);
+  };
+
+  return (
+    <div className="analysis-panel">
+      <button className="analysis-toggle" onClick={toggle}>
+        {open ? "Hide Details" : "Show Analysis & Provenance"}
+      </button>
+      {open && (
+        <div className="analysis-content">
+          {provenance && (
+            <div className="provenance-info">
+              <strong>Source:</strong> {provenance.filename} ({provenance.kind})
+            </div>
+          )}
+          {loading ? (
+            <p>Loading analysis...</p>
+          ) : analysis.length === 0 ? (
+            <p>No analysis found.</p>
+          ) : (
+            <ul className="analysis-list">
+              {analysis.map((a, i) => (
+                <li key={i} className={`analysis-item band-${a.band}`}>
+                  <span className="analysis-surface">{a.surface}</span>
+                  <span className="analysis-label">{a.label}</span>
+                  <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RatingRow({ onRate }: { onRate: Props["onRate"] }) {
@@ -35,7 +84,7 @@ function Media({ media }: { media: StudyCard["media"] }) {
   );
 }
 
-function BasicCard({ card, onRate }: Props) {
+function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "basic" }>; onRate: Props["onRate"] }) {
   const [revealed, setRevealed] = useState(false);
   return (
     <div className="card-surface">
@@ -43,17 +92,20 @@ function BasicCard({ card, onRate }: Props) {
       <div className="card-prompt">{card.question.text}</div>
       {revealed && <div className="card-answer">{card.answer.text}</div>}
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
       ) : (
-        <RatingRow onRate={onRate} />
+        <>
+          <RatingRow onRate={onRate} />
+          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+        </>
       )}
     </div>
   );
 }
 
-function ClozeCard({ card, onRate }: Props) {
+function ClozeCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "cloze" }>; onRate: Props["onRate"] }) {
   const [revealed, setRevealed] = useState(false);
   const display = revealed
     ? card.question.text.replace("_____", `[${card.answer.text}]`)
@@ -63,17 +115,20 @@ function ClozeCard({ card, onRate }: Props) {
       <Media media={card.media} />
       <div className="card-prompt">{display}</div>
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
       ) : (
-        <RatingRow onRate={onRate} />
+        <>
+          <RatingRow onRate={onRate} />
+          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+        </>
       )}
     </div>
   );
 }
 
-function ListeningCard({ card, onRate }: Props) {
+function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "listening" }>; onRate: Props["onRate"] }) {
   const [revealed, setRevealed] = useState(false);
   const [typed, setTyped] = useState("");
   const audioUrl = card.media?.audio ? `/media/${card.media.audio}` : null;
@@ -107,17 +162,20 @@ function ListeningCard({ card, onRate }: Props) {
       )}
       {revealed && <div className="card-answer">{card.answer.text}</div>}
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
       ) : (
-        <RatingRow onRate={onRate} />
+        <>
+          <RatingRow onRate={onRate} />
+          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+        </>
       )}
     </div>
   );
 }
 
-function ScrambleCard({ card, onRate }: Props) {
+function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "scramble" }>; onRate: Props["onRate"] }) {
   const [placedIdx, setPlacedIdx] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
   const words: string[] = card.question.words;
@@ -160,11 +218,14 @@ function ScrambleCard({ card, onRate }: Props) {
         </div>
       )}
       {!revealed ? (
-        <button className="text-input" style={{ cursor: "pointer" }} onClick={() => setRevealed(true)}>
+        <button className="text-input" onClick={() => setRevealed(true)}>
           Check
         </button>
       ) : (
-        <RatingRow onRate={onRate} />
+        <>
+          <RatingRow onRate={onRate} />
+          <AnalysisPanel noteId={card.note_id} provenance={card.provenance} />
+        </>
       )}
     </div>
   );
@@ -173,12 +234,13 @@ function ScrambleCard({ card, onRate }: Props) {
 export default function StudyCardView({ card, onRate }: Props) {
   switch (card.card_type) {
     case "cloze":
-      return <ClozeCard card={card} onRate={onRate} />;
+      return <ClozeCard card={card as Extract<StudyCard, { card_type: "cloze" }>} onRate={onRate} />;
     case "listening":
-      return <ListeningCard card={card} onRate={onRate} />;
+      return <ListeningCard card={card as Extract<StudyCard, { card_type: "listening" }>} onRate={onRate} />;
     case "scramble":
-      return <ScrambleCard card={card} onRate={onRate} />;
+      return <ScrambleCard card={card as Extract<StudyCard, { card_type: "scramble" }>} onRate={onRate} />;
+    case "basic":
     default:
-      return <BasicCard card={card} onRate={onRate} />;
+      return <BasicCard card={card as Extract<StudyCard, { card_type: "basic" }>} onRate={onRate} />;
   }
 }

@@ -250,22 +250,35 @@ async function japaneseSentenceCards(
   if (wantCloze) {
     const idx = pickJpClozeIndex(tokens);
     if (idx !== null) {
+      const target = tokens[idx];
       const clozeFuri = tokens.map((t, i) => (i === idx ? { text: BLANK } : furigana[i]));
       const clozeText = tokens.map((t, i) => (i === idx ? BLANK : t.surface)).join("");
+      
+      const isUncertain = target.readingDecision.needsReview;
       cards.push({
         cardType: "cloze",
         question: { text: clozeText, furigana: clozeFuri, lang: "ja" },
-        answer: { text: tokens[idx].surface, reading: tokens[idx].reading ?? undefined },
+        answer: { 
+          text: target.surface, 
+          reading: isUncertain ? undefined : (target.reading ?? undefined),
+          readingUncertain: isUncertain || undefined,
+          readingAlternatives: isUncertain && target.readingDecision.alternatives.length ? target.readingDecision.alternatives : undefined
+        },
       });
     }
   }
 
   if (wantScramble && wordTokens.length >= 3 && wordTokens.length <= 14) {
     const words = wordTokens.map((t) => t.surface);
+    const readingUncertain = wordTokens.some((t) => t.readingDecision.needsReview);
     cards.push({
       cardType: "scramble",
       question: { words: scrambledOrder(words), lang: "ja" },
-      answer: { words, reading: readingOf(wordTokens) },
+      answer: { 
+        words, 
+        reading: readingUncertain ? undefined : readingOf(wordTokens),
+        readingUncertain: readingUncertain || undefined
+      },
     });
   }
 

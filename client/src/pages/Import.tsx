@@ -40,10 +40,11 @@ export default function Import() {
   };
 
   return (
-    <div>
+    <div className="glass-panel">
       <h2>Import</h2>
       <p>Drop an Anki <code>.apkg</code> export, or a textbook/text file (<code>.txt</code>, <code>.pdf</code>).</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 420 }}>
+      
+      <div className="form-group mt-8">
         <input
           type="file"
           accept=".apkg,.txt,.pdf"
@@ -55,10 +56,10 @@ export default function Import() {
           value={deckName}
           onChange={(e) => setDeckName(e.target.value)}
         />
-        <button disabled={!file || busy} onClick={handleImport}>
+        <button disabled={!file || busy} onClick={handleImport} className="btn-primary lg">
           {busy ? "Importing..." : "Import"}
         </button>
-        {status && <p>{status}</p>}
+        {status && <p className={status.startsWith("Error") ? "error-text mt-8" : "mt-8"}>{status}</p>}
       </div>
     </div>
   );

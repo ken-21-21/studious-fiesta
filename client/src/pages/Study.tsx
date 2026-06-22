@@ -34,23 +34,25 @@ export default function Study() {
     }
   };
 
-  if (loading) return <p>Loading...</p>;
+  if (loading) return <div className="empty-state"><p>Loading cards...</p></div>;
 
   if (error) {
     return (
-      <div>
-        <p style={{ color: "#dc2626" }}>{error}</p>
-        <button onClick={load}>Retry</button>
+      <div className="empty-state">
+        <p className="error-text">{error}</p>
+        <button onClick={load} className="mt-8">Retry</button>
       </div>
     );
   }
 
   if (queue.length === 0) {
     return (
-      <div>
-        <h2>All caught up</h2>
-        <p>{reviewed > 0 ? `Reviewed ${reviewed} cards. ` : ""}No cards due right now.</p>
-        <Link to="/">Back to decks</Link>
+      <div className="empty-state">
+        <h2>All caught up! 🎉</h2>
+        <p>{reviewed > 0 ? `Reviewed ${reviewed} cards today. ` : ""}No cards due right now.</p>
+        <div className="mt-8">
+          <Link to="/" className="btn-primary">Back to decks</Link>
+        </div>
       </div>
     );
   }
@@ -58,10 +60,14 @@ export default function Study() {
   const current = queue[0];
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <Link to="/">← Decks</Link>
-        <span>{queue.length} remaining</span>
+    <div className="card-container">
+      <div className="page-header mb-4">
+        <Link to="/" className="nav-link">
+          <span>←</span> Decks
+        </Link>
+        <span className="badge">
+          {queue.length} remaining
+        </span>
       </div>
       <StudyCardView card={current} onRate={handleRate} />
     </div>
