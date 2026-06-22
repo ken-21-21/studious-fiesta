@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchNoteAnalysis, type FuriganaSegment, type NoteAnalysis, type PitchInfo, type StudyCard } from "../lib/api";
+import {
+  fetchNoteAnalysis,
+  submitCorrection,
+  type CorrectionScope,
+  type FuriganaSegment,
+  type NoteAnalysis,
+  type PitchInfo,
+  type StudyCard,
+} from "../lib/api";
 import "./CardTypes.css";
 
 interface Props {
@@ -57,19 +65,82 @@ function speak(text: string) {
   window.speechSynthesis.speak(utter);
 }
 
+// Lets a user override an analyzer claim (reading/grammar) for a specific
+// surface form. Submits to the corrections endpoint, scoped per the user's
+// choice; the analyzer/cardgen pipeline picks it up on the next pass.
+function CorrectionForm({
+  kind,
+  surface,
+  sourceId,
+  onDone,
+}: {
+  kind: "reading" | "grammar";
+  surface: string;
+  sourceId?: number;
+  onDone: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [scope, setScope] = useState<CorrectionScope>("global");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!value.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await submitCorrection({ kind, surface, value: value.trim(), scope, sourceId });
+      onDone();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to submit correction");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="correction-form">
+      <input
+        className="correction-input"
+        placeholder={`Correct reading for "${surface}"`}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <select
+        className="correction-scope"
+        value={scope}
+        onChange={(e) => setScope(e.target.value as CorrectionScope)}
+      >
+        <option value="occurrence">Just this occurrence</option>
+        <option value="sentence">This sentence</option>
+        <option value="source">This source</option>
+        <option value="matching">Anywhere this surface appears</option>
+        <option value="global">Always (global)</option>
+      </select>
+      <button className="correction-submit" onClick={submit} disabled={submitting || !value.trim()}>
+        {submitting ? "Saving…" : "Submit"}
+      </button>
+      {error && <span className="error-text">{error}</span>}
+    </div>
+  );
+}
+
 function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: StudyCard["provenance"] }) {
   const [open, setOpen] = useState(false);
   const [analysis, setAnalysis] = useState<NoteAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
+  const [correctingIdx, setCorrectingIdx] = useState<number | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    fetchNoteAnalysis(noteId)
+      .then(setAnalysis)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
 
   const toggle = () => {
-    if (!open && analysis.length === 0) {
-      setLoading(true);
-      fetchNoteAnalysis(noteId)
-        .then(setAnalysis)
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    }
+    if (!open && analysis.length === 0) load();
     setOpen(!open);
   };
 
@@ -93,9 +164,30 @@ function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: St
             <ul className="analysis-list">
               {analysis.map((a, i) => (
                 <li key={i} className={`analysis-item band-${a.band}`}>
-                  <span className="analysis-surface">{a.surface}</span>
-                  <span className="analysis-label">{a.label}</span>
-                  <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
+                  <div className="analysis-item-row">
+                    <span className="analysis-surface">{a.surface}</span>
+                    <span className="analysis-label">{a.label}</span>
+                    <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
+                    {(a.kind === "reading" || a.kind === "grammar") && (
+                      <button
+                        className="analysis-correct-btn"
+                        onClick={() => setCorrectingIdx(correctingIdx === i ? null : i)}
+                      >
+                        {correctingIdx === i ? "Cancel" : "Correct"}
+                      </button>
+                    )}
+                  </div>
+                  {correctingIdx === i && (a.kind === "reading" || a.kind === "grammar") && (
+                    <CorrectionForm
+                      kind={a.kind}
+                      surface={a.surface}
+                      sourceId={provenance?.sourceId}
+                      onDone={() => {
+                        setCorrectingIdx(null);
+                        load();
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>

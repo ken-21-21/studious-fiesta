@@ -124,3 +124,28 @@ export async function fetchNoteAnalysis(noteId: number): Promise<NoteAnalysis[]>
   if (!res.ok) throw new Error("Failed to load note analysis");
   return res.json();
 }
+
+export type CorrectionKind =
+  | "reading" | "tokenization" | "grammar" | "pitch" | "ocr" | "asr" | "translation" | "field_mapping";
+export type CorrectionScope = "occurrence" | "sentence" | "source" | "deck" | "matching" | "global";
+
+export interface CorrectionInput {
+  kind: CorrectionKind;
+  surface?: string;
+  context?: string;
+  scope?: CorrectionScope;
+  value: string;
+  note?: string;
+  sourceId?: number;
+}
+
+export async function submitCorrection(input: CorrectionInput): Promise<{ id: number }> {
+  const res = await fetch("/api/corrections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Failed to submit correction");
+  return data;
+}
