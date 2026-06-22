@@ -4,12 +4,24 @@ A living record of where this project stands. Kept in sync with the GitHub repo
 and updated on every change. Last synced commit and date are recorded below.
 
 - **My branch (Claude):** `claude/science-learning-app-fsrs-xnkrwu`
-- **Last synced commit (mine):** *(this commit)* — corrections ↔ analysis re-gating loop (Phase B+)
+- **Last synced commit (mine):** *(this commit)* — manual add-card flow
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
 - **Last synced commit (Antigravity):** `b626995` — Docs: Update project status
 - **Last updated:** 2026-06-22
-- **Tests:** 53 passing (9 files) · typecheck clean · build clean (server + client)
+- **Tests:** 58 passing (11 files) · typecheck clean · build clean (server + client)
+
+### Manual add-card flow (2026-06-22)
+The only way to get content in was bulk import (apkg or textbook) — no way
+to quickly jot down a single word/card. Added `POST /api/notes`
+(`server/src/routes/notes.ts`): takes `front`/`back` (+ optional `deckId` or
+`deckName`), creates a deck if needed, inserts a `manual`-sourced note and a
+plain `basic` card with fresh FSRS defaults. Deliberately makes no reading/
+pitch claims — same shape as an apkg "basic" card — so it carries nothing
+that needs gating under the JP-analysis invariant; if the user types
+Japanese, it's taken as their own settled spelling/reading, not an inferred
+one. Client: new `/add` page (`AddCard.tsx`) with deck picker/new-deck-name,
+front/back inputs, and "Add & add another" / "Add & study" actions.
 
 ### Phase B+: corrections ↔ analysis re-gating loop (2026-06-22)
 Closes the last open item on Phase B+: submitting a correction previously

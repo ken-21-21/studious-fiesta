@@ -1,7 +1,71 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
+import { newCardDefaults } from "../lib/fsrs.js";
 
 export const notesRouter = Router();
+
+const MAX_FIELD_LENGTH = 2000;
+const MAX_DECK_NAME_LENGTH = 200;
+
+// Quick single-card entry, distinct from the bulk apkg/textbook import
+// pipelines. Deliberately makes no linguistic claims (no reading/pitch
+// analysis) — it's a plain front/back card, same shape as an apkg "basic"
+// card, so there's nothing here that needs gating under the JP-analysis
+// invariant.
+notesRouter.post("/", (req, res) => {
+  const { deckId, deckName, front, back, tags } = req.body ?? {};
+  if (typeof front !== "string" || !front.trim()) {
+    return res.status(400).json({ error: "front is required" });
+  }
+  if (typeof back !== "string" || !back.trim()) {
+    return res.status(400).json({ error: "back is required" });
+  }
+  if (front.length > MAX_FIELD_LENGTH || back.length > MAX_FIELD_LENGTH) {
+    return res.status(400).json({ error: `front/back must be under ${MAX_FIELD_LENGTH} characters` });
+  }
+
+  let resolvedDeckId: number;
+  if (deckId !== undefined) {
+    if (!Number.isInteger(deckId) || deckId <= 0) {
+      return res.status(400).json({ error: "Invalid deckId" });
+    }
+    const deck = db.prepare("SELECT id FROM decks WHERE id = ?").get(deckId);
+    if (!deck) return res.status(404).json({ error: "Deck not found" });
+    resolvedDeckId = deckId;
+  } else {
+    const trimmed = typeof deckName === "string" ? deckName.trim() : "";
+    const name = (trimmed || "Manual").slice(0, MAX_DECK_NAME_LENGTH);
+    resolvedDeckId = Number(db.prepare("INSERT INTO decks (name) VALUES (?)").run(name).lastInsertRowid);
+  }
+
+  const frontTrimmed = front.trim();
+  const backTrimmed = back.trim();
+  const noteId = Number(
+    db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', ?, ?)")
+      .run(
+        resolvedDeckId,
+        JSON.stringify({ Front: frontTrimmed, Back: backTrimmed }),
+        typeof tags === "string" ? tags : ""
+      ).lastInsertRowid
+  );
+
+  const d = newCardDefaults();
+  const cardId = Number(
+    db.prepare(`
+      INSERT INTO cards (note_id, deck_id, card_type, question, answer,
+        due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state)
+      VALUES (?, ?, 'basic', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      noteId,
+      resolvedDeckId,
+      JSON.stringify({ text: frontTrimmed }),
+      JSON.stringify({ text: backTrimmed }),
+      d.due, d.stability, d.difficulty, d.elapsed_days, d.scheduled_days, d.reps, d.lapses, d.state
+    ).lastInsertRowid
+  );
+
+  res.status(201).json({ noteId, cardId, deckId: resolvedDeckId });
+});
 
 // The persisted linguistic analysis behind a note's cards: every reading
 // decision and grammar point, with confidence, band, evidence and the items

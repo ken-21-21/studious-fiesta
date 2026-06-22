@@ -139,6 +139,25 @@ export interface CorrectionInput {
   sourceId?: number;
 }
 
+export interface AddNoteInput {
+  deckId?: number;
+  deckName?: string;
+  front: string;
+  back: string;
+  tags?: string;
+}
+
+export async function addNote(input: AddNoteInput): Promise<{ noteId: number; cardId: number; deckId: number }> {
+  const res = await fetch("/api/notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Failed to add card");
+  return data;
+}
+
 export async function submitCorrection(input: CorrectionInput): Promise<{ id: number }> {
   const res = await fetch("/api/corrections", {
     method: "POST",
