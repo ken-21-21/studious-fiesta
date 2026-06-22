@@ -1,0 +1,104 @@
+.card-surface {
+  background: #fff;
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  text-align: center;
+}
+
+.card-prompt {
+  font-size: 1.4rem;
+  line-height: 1.5;
+}
+
+.card-media img {
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+}
+
+.card-answer {
+  color: #166534;
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.scramble-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.scramble-chip {
+  padding: 8px 14px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.05rem;
+  user-select: none;
+}
+
+.scramble-chip.placed {
+  background: #e0e7ff;
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scramble-answer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  min-height: 44px;
+  border-bottom: 2px dashed #cbd5e1;
+  padding-bottom: 10px;
+  width: 100%;
+}
+
+.listen-btn {
+  font-size: 2rem;
+  background: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 64px;
+  height: 64px;
+  cursor: pointer;
+}
+
+.text-input {
+  width: 100%;
+  max-width: 420px;
+  padding: 10px 14px;
+  font-size: 1.1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.rating-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.rating-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rating-again { background: #dc2626; }
+.rating-hard { background: #ea580c; }
+.rating-good { background: #16a34a; }
+.rating-easy { background: #2563eb; }
