@@ -45,7 +45,10 @@ export default function Decks() {
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2>Decks</h2>
-        <Link to="/import" className="btn-primary" style={{ textDecoration: 'none' }}><button>+ Import</button></Link>
+        <div className="flex gap-2">
+          <a href="/api/backup" className="btn-primary btn-secondary" style={{ textDecoration: 'none' }} download>Download backup</a>
+          <Link to="/import" className="btn-primary" style={{ textDecoration: 'none' }}><button>+ Import</button></Link>
+        </div>
       </div>
       
       {error && (
