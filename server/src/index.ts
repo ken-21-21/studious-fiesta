@@ -36,6 +36,12 @@ if (fs.existsSync(clientDist)) {
 }
 
 const PORT = Number(process.env.PORT) || 8787;
+
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
 });
