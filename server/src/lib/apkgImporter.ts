@@ -99,23 +99,32 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     });
   });
 
-  const importAll = db.transaction(() => {
+  const setupTransaction = db.transaction(() => {
     const sourceId = Number(insertSource.run(originalFilename, fileHash).lastInsertRowid);
     const deckRow = insertDeck.run(deckName);
     const deckId = Number(deckRow.lastInsertRowid);
+    return { sourceId, deckId };
+  });
 
-    const cardOrdsByNid = new Map<number, number[]>();
-    if (cardsRes.length) {
-      for (const row of cardsRes[0].values) {
-        const [nid, ord] = row as [number, number];
-        const list = cardOrdsByNid.get(nid) ?? [];
-        list.push(ord);
-        cardOrdsByNid.set(nid, list);
-      }
+  const { sourceId, deckId } = setupTransaction();
+
+  const cardOrdsByNid = new Map<number, number[]>();
+  if (cardsRes.length) {
+    for (const row of cardsRes[0].values) {
+      const [nid, ord] = row as [number, number];
+      const list = cardOrdsByNid.get(nid) ?? [];
+      list.push(ord);
+      cardOrdsByNid.set(nid, list);
     }
+  }
 
-    let imported = 0;
-    for (const row of notesRes[0].values) {
+  let imported = 0;
+  const CHUNK_SIZE = 500;
+  const values = notesRes[0].values;
+
+  const processChunk = db.transaction((chunk: any[]) => {
+    let chunkImported = 0;
+    for (const row of chunk) {
       const [nid, flds, tags] = row as [number, string, string];
       const parts = flds.split("\x1f");
       const front = parts[0] ?? "";
@@ -164,13 +173,16 @@ export async function importApkg(filePath: string, deckName: string, originalFil
           defaults.lapses,
           defaults.state
         );
-        imported++;
+        chunkImported++;
       }
     }
-
-    return { deckId, imported };
+    return chunkImported;
   });
 
-  const { deckId, imported } = importAll();
+  for (let i = 0; i < values.length; i += CHUNK_SIZE) {
+    const chunk = values.slice(i, i + CHUNK_SIZE);
+    imported += processChunk(chunk);
+  }
+
   return { deckId, cardsImported: imported };
 }
