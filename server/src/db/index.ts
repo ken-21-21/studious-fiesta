@@ -30,3 +30,12 @@ function ensureColumn(table: string, column: string, ddl: string) {
 }
 ensureColumn("notes", "source_id", "source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL");
 ensureColumn("notes", "source_location", "source_location TEXT");
+
+// Ensure FTS is populated for existing notes if just created
+const ftsCount = db.prepare(`SELECT count(*) as c FROM notes_fts`).get() as { c: number };
+if (ftsCount.c === 0) {
+  const notesCount = db.prepare(`SELECT count(*) as c FROM notes`).get() as { c: number };
+  if (notesCount.c > 0) {
+    db.exec(`INSERT INTO notes_fts(notes_fts) VALUES('rebuild')`);
+  }
+}

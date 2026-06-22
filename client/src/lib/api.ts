@@ -97,3 +97,26 @@ export async function fetchNoteAnalysis(noteId: number): Promise<NoteAnalysis[]>
   if (!res.ok) throw new Error("Failed to load note analysis");
   return res.json();
 }
+
+export interface CorrectionPayload {
+  kind: string;
+  surface?: string;
+  context?: string;
+  scope?: "occurrence" | "sentence" | "source" | "deck" | "matching" | "global";
+  value: string;
+  note?: string;
+  sourceId?: number;
+}
+
+export async function submitCorrection(payload: CorrectionPayload): Promise<{ id: number }> {
+  const res = await fetch("/api/corrections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Failed to submit correction");
+  }
+  return res.json();
+}

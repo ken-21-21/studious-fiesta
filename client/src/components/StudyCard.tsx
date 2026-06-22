@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchNoteAnalysis, type NoteAnalysis, type StudyCard } from "../lib/api";
+import React, { useEffect, useMemo, useState } from "react";
+import { fetchNoteAnalysis, submitCorrection, type NoteAnalysis, type StudyCard, type CorrectionPayload } from "../lib/api";
 import "./CardTypes.css";
 
 interface Props {
@@ -14,11 +14,76 @@ function speak(text: string) {
   window.speechSynthesis.speak(utter);
 }
 
+function CorrectionForm({
+  analysis,
+  provenance,
+  onCancel,
+  onSuccess
+}: {
+  analysis: NoteAnalysis;
+  provenance?: StudyCard["provenance"];
+  onCancel: () => void;
+  onSuccess: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [scope, setScope] = useState<CorrectionPayload["scope"]>("occurrence");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!value.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await submitCorrection({
+        kind: analysis.kind,
+        surface: analysis.surface,
+        scope,
+        value,
+        sourceId: provenance?.sourceId,
+      });
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form className="correction-form" onSubmit={handleSubmit}>
+      <div className="correction-header">Correct {analysis.kind} for "{analysis.surface}"</div>
+      {error && <p className="error-text">{error}</p>}
+      <label>
+        Correct value:
+        <input value={value} onChange={e => setValue(e.target.value)} disabled={submitting} required />
+      </label>
+      <label>
+        Scope:
+        <select value={scope} onChange={e => setScope(e.target.value as any)} disabled={submitting}>
+          <option value="occurrence">Occurrence</option>
+          <option value="sentence">Sentence</option>
+          <option value="source">Source</option>
+          <option value="deck">Deck</option>
+          <option value="matching">Matching</option>
+          <option value="global">Global</option>
+        </select>
+      </label>
+      <div className="correction-actions">
+        <button type="submit" disabled={submitting || !value.trim()}>Submit</button>
+        <button type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
 function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: StudyCard["provenance"] }) {
   const [open, setOpen] = useState(false);
   const [analysis, setAnalysis] = useState<NoteAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [correctingIdx, setCorrectingIdx] = useState<number | null>(null);
 
   const toggle = () => {
     if (!open && analysis.length === 0) {
@@ -54,9 +119,34 @@ function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: St
             <ul className="analysis-list">
               {analysis.map((a, i) => (
                 <li key={i} className={`analysis-item band-${a.band}`}>
-                  <span className="analysis-surface">{a.surface}</span>
-                  <span className="analysis-label">{a.label}</span>
-                  <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
+                  <div className="analysis-main">
+                    <span className="analysis-surface">{a.surface}</span>
+                    <span className="analysis-label">{a.label}</span>
+                    <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
+                    {a.evidence && (
+                      <span className="analysis-evidence" title={JSON.stringify(a.evidence)}>
+                        (Evidence: {typeof a.evidence === 'string' ? a.evidence : 'Yes'})
+                      </span>
+                    )}
+                    <button className="btn-correct" onClick={() => setCorrectingIdx(i)}>
+                      Correct
+                    </button>
+                  </div>
+                  {correctingIdx === i && (
+                    <CorrectionForm
+                      analysis={a}
+                      provenance={provenance}
+                      onCancel={() => setCorrectingIdx(null)}
+                      onSuccess={() => {
+                        setCorrectingIdx(null);
+                        setLoading(true);
+                        fetchNoteAnalysis(noteId)
+                          .then(setAnalysis)
+                          .catch(err => setError(err.message))
+                          .finally(() => setLoading(false));
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
