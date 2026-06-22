@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { deleteDeck, fetchDecks, type Deck } from "../lib/api";
+import { SkeletonLoader, ErrorMessage } from "../components/Loaders";
 
 export default function Decks() {
   const [decks, setDecks] = useState<Deck[]>([]);
@@ -28,19 +29,29 @@ export default function Decks() {
     }
   };
 
-  if (loading) return <div className="empty-state"><p>Loading decks...</p></div>;
+  if (loading) return (
+    <div>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <h2>Decks</h2>
+      </div>
+      <SkeletonLoader />
+      <div style={{ marginTop: '16px' }}>
+        <SkeletonLoader />
+      </div>
+    </div>
+  );
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2>Decks</h2>
-        <Link to="/import" className="btn-primary">+ Import</Link>
+        <Link to="/import" className="btn-primary" style={{ textDecoration: 'none' }}><button>+ Import</button></Link>
       </div>
       
       {error && (
-        <div className="empty-state">
-          <p className="error-text">{error}</p>
-          <button onClick={load}>Retry</button>
+        <div style={{ marginBottom: '24px' }}>
+          <ErrorMessage message={error} />
+          <button onClick={load} style={{ marginTop: '16px' }}>Retry</button>
         </div>
       )}
       

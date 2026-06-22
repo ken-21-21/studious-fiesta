@@ -6,12 +6,16 @@ import Study from "./pages/Study";
 export default function App() {
   return (
     <>
-      <header className="app-header">
-        <Link to="/">
-          <h1>FSRS Learn</h1>
+      <header className="glass-panel app-header">
+        <Link to="/" className="app-title-link">
+          <h1 className="app-title">FSRS Learn</h1>
         </Link>
+        <nav className="nav-links">
+          <Link to="/" className="nav-link"><button>Decks</button></Link>
+          <Link to="/import" className="nav-link"><button>Import</button></Link>
+        </nav>
       </header>
-      <main>
+      <main className="main-content">
         <Routes>
           <Route path="/" element={<Decks />} />
           <Route path="/import" element={<Import />} />
