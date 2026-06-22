@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Outfit:wght@400;500;600;700&display=swap');
 
 :root {
   --text: #4b5563;
@@ -35,8 +35,8 @@
   --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.8), 0 0 60px var(--accent-glow), inset 0 1px 1px rgba(255, 255, 255, 0.15);
   --shadow-glow: 0 0 24px var(--accent-glow);
 
-  --sans: 'Inter', system-ui, sans-serif;
-  --heading: 'Outfit', system-ui, sans-serif;
+  --sans: 'Inter', 'Noto Sans JP', system-ui, sans-serif;
+  --heading: 'Outfit', 'Noto Sans JP', system-ui, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
   font: 16px/1.6 var(--sans);

@@ -25,13 +25,23 @@ function extFilter(allowed: string[]) {
 
 const uploadApkg = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: MAX_UPLOAD_BYTES },
+  limits: { 
+    fileSize: MAX_UPLOAD_BYTES,
+    files: 1,
+    fields: 10,
+    fieldSize: 1024 * 1024 
+  },
   fileFilter: extFilter([".apkg"]),
 });
 
 const uploadMedia = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: MAX_UPLOAD_BYTES },
+  limits: { 
+    fileSize: MAX_UPLOAD_BYTES,
+    files: 1,
+    fields: 10,
+    fieldSize: 1024 * 1024 
+  },
   fileFilter: extFilter([
     ".txt", ".pdf", ".epub",
     ".png", ".jpg", ".jpeg", ".webp",
@@ -41,11 +51,17 @@ const uploadMedia = multer({
 });
 
 // multer's `fileFilter`/size errors are passed to Express's error pipeline rather than
-// the route handler, so route this through a callback that turns them into a clean 400.
+// the route handler, so route this through a callback that turns them into a clean 400 (or 413).
 function withUpload(middleware: RequestHandler) {
   return (req: Request, res: Response, next: NextFunction) => {
     middleware(req, res, (err: unknown) => {
       if (err) {
+        if (err instanceof multer.MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(413).json({ data: null, error: "File too large" });
+          }
+          return res.status(400).json({ data: null, error: err.message });
+        }
         const message = err instanceof Error ? err.message : "Upload failed";
         return res.status(400).json({ data: null, error: message });
       }

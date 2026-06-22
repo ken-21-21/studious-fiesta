@@ -33,12 +33,29 @@
   padding: 2.5rem 2rem;
   box-shadow: var(--shadow-lg);
   min-height: 300px;
+  max-height: 85vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   align-items: center;
   text-align: center;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-surface::-webkit-scrollbar {
+  width: 6px;
+}
+.card-surface::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 1rem 0;
+}
+.card-surface::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+.card-surface::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .card-prompt {
@@ -386,3 +403,20 @@ button.text-input:hover {
   color: var(--text);
 }
 
+ruby {
+  font-family: 'Noto Sans JP', sans-serif;
+  line-height: 2.5;
+  margin: 0 0.1em;
+  display: inline-block;
+  ruby-align: center;
+}
+
+rt {
+  font-size: 0.55em;
+  line-height: 1;
+  opacity: 0.8;
+  user-select: none;
+  font-weight: 400;
+  transform: translateY(-0.1em);
+  color: var(--text);
+}
