@@ -4,7 +4,7 @@ A living record of where this project stands. Kept in sync with the GitHub repo
 and updated on every change. Last synced commit and date are recorded below.
 
 - **Branch:** `claude/science-learning-app-fsrs-xnkrwu`
-- **Last synced commit:** `fe8f65a` — Persist per-note linguistic analysis with provenance
+- **Last synced commit:** `47d0250` — Add PROJECT_STATUS.md (status doc + this update)
 - **Last updated:** 2026-06-22
 - **Tests:** 36 passing (6 files) · typecheck clean · build clean
 
@@ -106,3 +106,7 @@ Quality gates: `npm run typecheck`, `npm test`, `npm run build` (all in `server/
   line as the source of truth for what state it describes.
 - The remote execution environment is ephemeral — only committed files survive,
   which is why this status lives in the repo rather than as an untracked file.
+- **Two agents edit this repo** (Claude + Antigravity). See `CLAUDE.md` for the
+  reconciliation protocol. Claude's commits are authored `Claude
+  <noreply@anthropic.com>`; anything else on the branch is an external change to
+  reconcile. The "Last synced commit" above is the detection anchor.
