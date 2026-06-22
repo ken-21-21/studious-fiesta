@@ -1,4 +1,6 @@
 import { tokenize, type AnalyzedToken, type FuriganaSegment } from "./jp/tokenizer.js";
+import { analyzeGrammar } from "./jp/grammar.js";
+import { readingRecords, grammarRecords, type AnalysisRecord } from "./jp/analysisRecord.js";
 import { lookupPitch, type PitchInfo } from "./jp/pitch.js";
 import { countMorae } from "./jp/morae.js";
 import { hasJapanese, hasKanji, kataToHira } from "./jp/kana.js";
@@ -20,6 +22,8 @@ export interface NoteSpec {
   fields: Record<string, unknown>;
   tags: string;
   cards: CardSpec[];
+  /** Persisted linguistic analysis behind this note's cards (provenance). */
+  analysis?: AnalysisRecord[];
 }
 
 // Bounds so a single huge lesson can't generate an unbounded pile of cards.
@@ -85,6 +89,8 @@ interface TermAnalysis {
   readingUncertain: boolean;
   /** Alternative readings to preserve for inspection/correction. */
   alternatives: string[];
+  /** Persistable reading-decision records behind this term. */
+  analysis: AnalysisRecord[];
 }
 
 async function analyzeTerm(term: string, explicitReading?: string): Promise<TermAnalysis> {
@@ -103,6 +109,24 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
       pitch,
       readingUncertain: false,
       alternatives: [],
+      // A source-supplied reading is a single high-confidence whole-word claim.
+      analysis: [
+        {
+          kind: "reading",
+          surface: term,
+          label: reading,
+          spanStart: null,
+          spanEnd: null,
+          confidence: 0.95,
+          band: "high",
+          needsReview: false,
+          analyzerName: null,
+          analyzerVersion: null,
+          evidence: [{ source: "source_furigana", detail: "Reading supplied by source vocabulary list" }],
+          alternatives: [],
+          payload: { surface: term, selected: reading, source: "source_furigana" },
+        },
+      ],
     };
   }
 
@@ -126,7 +150,15 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
     }
   }
 
-  return { furigana: furiganaOf(tokens), reading, morae, pitch, readingUncertain, alternatives };
+  return {
+    furigana: furiganaOf(tokens),
+    reading,
+    morae,
+    pitch,
+    readingUncertain,
+    alternatives,
+    analysis: readingRecords(tokens),
+  };
 }
 
 async function vocabNote(entry: VocabEntry): Promise<NoteSpec> {
@@ -180,6 +212,7 @@ async function vocabNote(entry: VocabEntry): Promise<NoteSpec> {
     },
     tags: a.readingUncertain ? "vocabulary needs_review" : "vocabulary",
     cards,
+    analysis: a.analysis,
   };
 }
 
@@ -197,11 +230,18 @@ function pickJpClozeIndex(tokens: AnalyzedToken[]): number | null {
   return null;
 }
 
-async function japaneseSentenceCards(sentence: string, type: SectionType): Promise<CardSpec[]> {
+async function japaneseSentenceCards(
+  sentence: string,
+  type: SectionType
+): Promise<{ cards: CardSpec[]; analysis: AnalysisRecord[] }> {
   const tokens = await tokenize(sentence);
   const wordTokens = tokens.filter((t) => t.pos !== PUNCT_POS);
   const furigana = furiganaOf(tokens);
   const cards: CardSpec[] = [];
+  const analysis: AnalysisRecord[] = [
+    ...readingRecords(tokens),
+    ...grammarRecords(analyzeGrammar(tokens)),
+  ];
 
   const wantCloze = type === "grammar" || type === "culture" || type === "reading" || type === "content";
   const wantScramble = type === "grammar" || type === "dialogue" || type === "content" || type === "practice";
@@ -237,7 +277,7 @@ async function japaneseSentenceCards(sentence: string, type: SectionType): Promi
     });
   }
 
-  return cards;
+  return { cards, analysis };
 }
 
 function englishSentenceCards(sentence: string, type: SectionType): CardSpec[] {
@@ -274,12 +314,14 @@ function englishSentenceCards(sentence: string, type: SectionType): CardSpec[] {
 
 async function sentenceNote(sentence: string, type: SectionType): Promise<NoteSpec | null> {
   const lang = classify(sentence);
-  const cards =
-    lang === "en"
-      ? englishSentenceCards(sentence, type)
-      : await japaneseSentenceCards(sentence, type);
+  if (lang === "en") {
+    const cards = englishSentenceCards(sentence, type);
+    if (!cards.length) return null;
+    return { fields: { sentence }, tags: type, cards };
+  }
+  const { cards, analysis } = await japaneseSentenceCards(sentence, type);
   if (!cards.length) return null;
-  return { fields: { sentence }, tags: type, cards };
+  return { fields: { sentence }, tags: type, cards, analysis };
 }
 
 // ---------------------------------------------------------------------------

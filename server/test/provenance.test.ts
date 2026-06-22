@@ -40,5 +40,20 @@ describe("source provenance on textbook ingestion", () => {
       expect(note.source_id).toBe(source.id);
       expect(JSON.parse(note.source_location)).toHaveProperty("label");
     }
+
+    // Each vocab note should have persisted at least one reading-decision
+    // analysis row carrying confidence, band and evidence.
+    const noteIds = notes.map((n) => n.id);
+    const analyses = db
+      .prepare(
+        `SELECT * FROM note_analyses WHERE note_id IN (${noteIds.map(() => "?").join(",")})`
+      )
+      .all(...noteIds) as any[];
+    expect(analyses.length).toBeGreaterThan(0);
+    const reading = analyses.find((a) => a.kind === "reading");
+    expect(reading).toBeTruthy();
+    expect(["high", "medium", "low"]).toContain(reading.band);
+    expect(JSON.parse(reading.evidence).length).toBeGreaterThan(0);
+    expect(typeof reading.confidence).toBe("number");
   });
 });

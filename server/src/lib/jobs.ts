@@ -34,6 +34,11 @@ const insertCardStmt = db.prepare(`
     due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
+const insertAnalysisStmt = db.prepare(`
+  INSERT INTO note_analyses (note_id, kind, surface, label, span_start, span_end,
+    confidence, band, needs_review, analyzer_name, analyzer_version, evidence, alternatives, payload)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
 
 function hashFile(filePath: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
@@ -50,6 +55,24 @@ const persistLesson = db.transaction(
           .run(deckId, sourceId, JSON.stringify(location), JSON.stringify(note.fields), note.tags)
           .lastInsertRowid
       );
+      for (const a of note.analysis ?? []) {
+        insertAnalysisStmt.run(
+          noteId,
+          a.kind,
+          a.surface,
+          a.label,
+          a.spanStart,
+          a.spanEnd,
+          a.confidence,
+          a.band,
+          a.needsReview ? 1 : 0,
+          a.analyzerName,
+          a.analyzerVersion,
+          JSON.stringify(a.evidence),
+          JSON.stringify(a.alternatives),
+          JSON.stringify(a.payload)
+        );
+      }
       for (const card of note.cards) {
         const d = newCardDefaults();
         insertCardStmt.run(

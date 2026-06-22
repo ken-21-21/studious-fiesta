@@ -51,6 +51,32 @@ CREATE TABLE IF NOT EXISTS cards (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Per-note linguistic analysis, persisted with full provenance so every claim
+-- a card makes (this reading, this grammar point) is individually inspectable
+-- and correctable later, rather than computed and discarded at card-gen time.
+CREATE TABLE IF NOT EXISTS note_analyses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,             -- 'reading' | 'grammar'
+  surface TEXT NOT NULL,          -- the analyzed surface span
+  label TEXT NOT NULL,            -- reading: chosen reading/'?'; grammar: machine label
+  span_start INTEGER,             -- token index range (grammar), nullable
+  span_end INTEGER,
+  confidence REAL NOT NULL,
+  band TEXT NOT NULL,             -- high|medium|low
+  needs_review INTEGER NOT NULL DEFAULT 0,
+  analyzer_name TEXT,
+  analyzer_version TEXT,
+  evidence TEXT NOT NULL DEFAULT '[]',      -- JSON Evidence[]
+  alternatives TEXT NOT NULL DEFAULT '[]',  -- JSON alternatives
+  payload TEXT NOT NULL,          -- JSON: full ReadingDecision / GrammarAnnotation
+  corrected_by_user INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_note_analyses_note ON note_analyses(note_id);
+CREATE INDEX IF NOT EXISTS idx_note_analyses_review ON note_analyses(needs_review);
+CREATE INDEX IF NOT EXISTS idx_note_analyses_label ON note_analyses(kind, label);
+
 CREATE TABLE IF NOT EXISTS review_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
