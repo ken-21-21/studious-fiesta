@@ -17,6 +17,14 @@ decksRouter.get("/", (_req, res) => {
 });
 
 decksRouter.delete("/:id", (req, res) => {
-  db.prepare("DELETE FROM decks WHERE id = ?").run(req.params.id);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid deck id" });
+  }
+
+  const result = db.prepare("DELETE FROM decks WHERE id = ?").run(id);
+  if (result.changes === 0) {
+    return res.status(404).json({ error: "Deck not found" });
+  }
   res.status(204).end();
 });

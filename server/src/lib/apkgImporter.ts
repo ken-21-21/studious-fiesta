@@ -24,7 +24,12 @@ function stripTags(html: string): string {
 }
 
 export async function importApkg(filePath: string, deckName: string) {
-  const zip = new AdmZip(filePath);
+  let zip: AdmZip;
+  try {
+    zip = new AdmZip(filePath);
+  } catch {
+    throw new Error("Not a valid .apkg file (could not read as a zip archive)");
+  }
   const entries = zip.getEntries();
 
   const collEntry =
@@ -33,9 +38,14 @@ export async function importApkg(filePath: string, deckName: string) {
   if (!collEntry) throw new Error("Not a valid .apkg file (no collection db found)");
 
   const mediaEntry = entries.find((e) => e.entryName === "media");
-  const mediaMap: Record<string, string> = mediaEntry
-    ? JSON.parse(mediaEntry.getData().toString("utf-8"))
-    : {};
+  let mediaMap: Record<string, string> = {};
+  if (mediaEntry) {
+    try {
+      mediaMap = JSON.parse(mediaEntry.getData().toString("utf-8"));
+    } catch {
+      throw new Error("Not a valid .apkg file (media manifest is corrupt)");
+    }
+  }
 
   // mediaMap: { "0": "filename.mp3", ... } numeric entry name -> original filename
   const origNameToStored: Record<string, string> = {};
@@ -48,16 +58,27 @@ export async function importApkg(filePath: string, deckName: string) {
   }
 
   const sqljs = await getSql();
-  const sqlDb = new sqljs.Database(collEntry.getData());
-
-  const deckRow = db.prepare("INSERT INTO decks (name) VALUES (?)").run(deckName);
-  const deckId = Number(deckRow.lastInsertRowid);
+  let sqlDb: InstanceType<typeof sqljs.Database>;
+  try {
+    sqlDb = new sqljs.Database(collEntry.getData());
+  } catch {
+    throw new Error("Not a valid .apkg file (collection database is corrupt)");
+  }
 
   // notes: id, flds (fields separated by \x1f), tags
-  const notesRes = sqlDb.exec("SELECT id, flds, tags FROM notes");
-  const cardsRes = sqlDb.exec("SELECT nid, ord FROM cards");
-  sqlDb.close();
+  let notesRes, cardsRes;
+  try {
+    notesRes = sqlDb.exec("SELECT id, flds, tags FROM notes");
+    cardsRes = sqlDb.exec("SELECT nid, ord FROM cards");
+  } finally {
+    sqlDb.close();
+  }
 
+  if (!notesRes.length) {
+    throw new Error("No notes found in this .apkg file");
+  }
+
+  const insertDeck = db.prepare("INSERT INTO decks (name) VALUES (?)");
   const insertNote = db.prepare(
     "INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'apkg', ?, ?)"
   );
@@ -67,8 +88,10 @@ export async function importApkg(filePath: string, deckName: string) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  let imported = 0;
-  if (notesRes.length) {
+  const importAll = db.transaction(() => {
+    const deckRow = insertDeck.run(deckName);
+    const deckId = Number(deckRow.lastInsertRowid);
+
     const cardOrdsByNid = new Map<number, number[]>();
     if (cardsRes.length) {
       for (const row of cardsRes[0].values) {
@@ -79,6 +102,7 @@ export async function importApkg(filePath: string, deckName: string) {
       }
     }
 
+    let imported = 0;
     for (const row of notesRes[0].values) {
       const [nid, flds, tags] = row as [number, string, string];
       const parts = flds.split("\x1f");
@@ -125,7 +149,10 @@ export async function importApkg(filePath: string, deckName: string) {
         imported++;
       }
     }
-  }
 
+    return { deckId, imported };
+  });
+
+  const { deckId, imported } = importAll();
   return { deckId, cardsImported: imported };
 }

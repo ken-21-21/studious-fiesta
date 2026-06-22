@@ -9,11 +9,14 @@ export default function Study() {
   const [queue, setQueue] = useState<StudyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewed, setReviewed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
+    setError(null);
     fetchQueue(deckId, 30)
       .then(setQueue)
+      .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -22,12 +25,25 @@ export default function Study() {
   const handleRate = async (rating: 1 | 2 | 3 | 4) => {
     const [current, ...rest] = queue;
     if (!current) return;
-    setQueue(rest);
-    setReviewed((n) => n + 1);
-    await reviewCard(current.id, rating);
+    try {
+      await reviewCard(current.id, rating);
+      setQueue(rest);
+      setReviewed((n) => n + 1);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to submit review");
+    }
   };
 
   if (loading) return <p>Loading...</p>;
+
+  if (error) {
+    return (
+      <div>
+        <p style={{ color: "#dc2626" }}>{error}</p>
+        <button onClick={load}>Retry</button>
+      </div>
+    );
+  }
 
   if (queue.length === 0) {
     return (

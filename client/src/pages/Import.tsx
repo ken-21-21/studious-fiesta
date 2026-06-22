@@ -11,10 +11,17 @@ export default function Import() {
 
   const handleImport = async () => {
     if (!file) return;
+    const lowerName = file.name.toLowerCase();
+    const isApkg = lowerName.endsWith(".apkg");
+    const isSupported = isApkg || lowerName.endsWith(".txt") || lowerName.endsWith(".pdf");
+    if (!isSupported) {
+      setStatus("Error: unsupported file type. Use .apkg, .txt, or .pdf.");
+      return;
+    }
+
     setBusy(true);
     setStatus("Importing...");
     try {
-      const isApkg = file.name.toLowerCase().endsWith(".apkg");
       const name = deckName || file.name;
       const result = isApkg
         ? await importApkg(file, name)

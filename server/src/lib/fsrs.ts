@@ -45,46 +45,52 @@ export const VALID_RATINGS = [
   Rating.Easy,
 ] as const;
 
+const updateCardStmt = db.prepare(`
+  UPDATE cards SET
+    due = ?, stability = ?, difficulty = ?, elapsed_days = ?,
+    scheduled_days = ?, reps = ?, lapses = ?, state = ?, last_review = ?
+  WHERE id = ?
+`);
+
+const insertReviewLogStmt = db.prepare(`
+  INSERT INTO review_logs
+    (card_id, rating, state, due, stability, difficulty, elapsed_days, last_elapsed_days, scheduled_days, review)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
 export function gradeCard(row: CardRow, rating: Grade, now = new Date()) {
   const fsrsCard = rowToFsrsCard(row);
   const result = scheduler.next(fsrsCard, now, rating);
-
-  const update = db.prepare(`
-    UPDATE cards SET
-      due = ?, stability = ?, difficulty = ?, elapsed_days = ?,
-      scheduled_days = ?, reps = ?, lapses = ?, state = ?, last_review = ?
-    WHERE id = ?
-  `);
   const c = result.card;
-  update.run(
-    c.due.toISOString(),
-    c.stability,
-    c.difficulty,
-    c.elapsed_days,
-    c.scheduled_days,
-    c.reps,
-    c.lapses,
-    c.state,
-    c.last_review ? c.last_review.toISOString() : null,
-    row.id
-  );
 
-  db.prepare(`
-    INSERT INTO review_logs
-      (card_id, rating, state, due, stability, difficulty, elapsed_days, last_elapsed_days, scheduled_days, review)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    row.id,
-    rating,
-    result.log.state,
-    c.due.toISOString(),
-    c.stability,
-    c.difficulty,
-    result.log.elapsed_days,
-    result.log.elapsed_days,
-    result.log.scheduled_days,
-    now.toISOString()
-  );
+  const persist = db.transaction(() => {
+    updateCardStmt.run(
+      c.due.toISOString(),
+      c.stability,
+      c.difficulty,
+      c.elapsed_days,
+      c.scheduled_days,
+      c.reps,
+      c.lapses,
+      c.state,
+      c.last_review ? c.last_review.toISOString() : null,
+      row.id
+    );
+
+    insertReviewLogStmt.run(
+      row.id,
+      rating,
+      result.log.state,
+      c.due.toISOString(),
+      c.stability,
+      c.difficulty,
+      result.log.elapsed_days,
+      result.log.elapsed_days,
+      result.log.scheduled_days,
+      now.toISOString()
+    );
+  });
+  persist();
 
   return c;
 }

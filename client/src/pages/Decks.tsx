@@ -5,11 +5,14 @@ import { deleteDeck, fetchDecks, type Deck } from "../lib/api";
 export default function Decks() {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
+    setError(null);
     fetchDecks()
       .then(setDecks)
+      .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -17,8 +20,12 @@ export default function Decks() {
 
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this deck and all its cards?")) return;
-    await deleteDeck(id);
-    load();
+    try {
+      await deleteDeck(id);
+      load();
+    } catch (err: any) {
+      setError(err.message ?? "Failed to delete deck");
+    }
   };
 
   if (loading) return <p>Loading decks...</p>;
@@ -29,7 +36,14 @@ export default function Decks() {
         <h2>Decks</h2>
         <Link to="/import">+ Import</Link>
       </div>
-      {decks.length === 0 && <p>No decks yet. Import an .apkg file or a textbook to get started.</p>}
+      {error && (
+        <p style={{ color: "#dc2626" }}>
+          {error} <button onClick={load}>Retry</button>
+        </p>
+      )}
+      {!error && decks.length === 0 && (
+        <p>No decks yet. Import an .apkg file or a textbook to get started.</p>
+      )}
       <ul style={{ listStyle: "none", padding: 0 }}>
         {decks.map((d) => (
           <li

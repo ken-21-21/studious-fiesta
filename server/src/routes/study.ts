@@ -1,12 +1,26 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
-import { gradeCard, type CardRow } from "../lib/fsrs.js";
+import { gradeCard, VALID_RATINGS, type CardRow } from "../lib/fsrs.js";
 
 export const studyRouter = Router();
 
+const MAX_QUEUE_LIMIT = 200;
+
 studyRouter.get("/queue", (req, res) => {
-  const deckId = req.query.deckId ? Number(req.query.deckId) : undefined;
-  const limit = req.query.limit ? Number(req.query.limit) : 20;
+  let deckId: number | undefined;
+  if (req.query.deckId !== undefined) {
+    deckId = Number(req.query.deckId);
+    if (!Number.isInteger(deckId) || deckId <= 0) {
+      return res.status(400).json({ error: "deckId must be a positive integer" });
+    }
+  }
+
+  let limit = req.query.limit ? Number(req.query.limit) : 20;
+  if (!Number.isInteger(limit) || limit <= 0) {
+    return res.status(400).json({ error: "limit must be a positive integer" });
+  }
+  limit = Math.min(limit, MAX_QUEUE_LIMIT);
+
   const now = new Date().toISOString();
 
   const cards = deckId
@@ -35,8 +49,12 @@ studyRouter.get("/queue", (req, res) => {
 
 studyRouter.post("/cards/:id/review", (req, res) => {
   const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid card id" });
+  }
+
   const rating = Number(req.body.rating);
-  if (![1, 2, 3, 4].includes(rating)) {
+  if (!VALID_RATINGS.includes(rating as (typeof VALID_RATINGS)[number])) {
     return res.status(400).json({ error: "rating must be 1-4 (Again/Hard/Good/Easy)" });
   }
 

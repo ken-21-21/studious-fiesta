@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import winkNLP from "wink-nlp";
 import model from "wink-eng-lite-web-model";
 import { db } from "../db/index.js";
@@ -60,9 +61,21 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-export async function importTextbook(filePath: string, mimeType: string, deckName: string) {
+// Plain shuffle on a short array sometimes returns the original order; retry
+// a few times so scramble cards are actually scrambled when possible.
+function scrambledOrder<T>(arr: T[]): T[] {
+  if (arr.length < 2) return arr;
+  let attempt = shuffle(arr);
+  for (let i = 0; i < 5 && attempt.join(" ") === arr.join(" "); i++) {
+    attempt = shuffle(arr);
+  }
+  return attempt;
+}
+
+export async function importTextbook(filePath: string, originalFilename: string, deckName: string) {
+  const ext = path.extname(originalFilename).toLowerCase();
   let text: string;
-  if (mimeType === "application/pdf") {
+  if (ext === ".pdf") {
     const pdfParse = (await import("pdf-parse")).default;
     const buf = fs.readFileSync(filePath);
     const result = await pdfParse(buf);
@@ -74,9 +87,11 @@ export async function importTextbook(filePath: string, mimeType: string, deckNam
   const sentences = splitSentences(text);
   if (!sentences.length) throw new Error("No usable sentences found in the document");
 
-  const deckRow = db.prepare("INSERT INTO decks (name) VALUES (?)").run(deckName);
-  const deckId = Number(deckRow.lastInsertRowid);
+  // Cap to avoid runaway generation on huge textbooks in one import.
+  const MAX_SENTENCES = 400;
+  const toProcess = sentences.slice(0, MAX_SENTENCES);
 
+  const insertDeck = db.prepare("INSERT INTO decks (name) VALUES (?)");
   const insertNote = db.prepare(
     "INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'textbook', ?, '')"
   );
@@ -86,62 +101,68 @@ export async function importTextbook(filePath: string, mimeType: string, deckNam
     VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  let cardsCreated = 0;
-  // Cap to avoid runaway generation on huge textbooks in one import.
-  const MAX_SENTENCES = 400;
-  for (const sentence of sentences.slice(0, MAX_SENTENCES)) {
-    const noteRes = insertNote.run(deckId, JSON.stringify({ sentence }));
-    const noteId = Number(noteRes.lastInsertRowid);
+  const importAll = db.transaction((sentences: string[]) => {
+    const deckRow = insertDeck.run(deckName);
+    const deckId = Number(deckRow.lastInsertRowid);
 
-    const cloze = makeCloze(sentence);
-    const words = sentence.replace(/[.?!]$/, "").split(/\s+/).filter(Boolean);
+    let cardsCreated = 0;
+    for (const sentence of sentences) {
+      const noteRes = insertNote.run(deckId, JSON.stringify({ sentence }));
+      const noteId = Number(noteRes.lastInsertRowid);
 
-    const cardSpecs: { type: string; question: object; answer: object }[] = [];
+      const cloze = makeCloze(sentence);
+      const words = sentence.replace(/[.?!]$/, "").split(/\s+/).filter(Boolean);
 
-    if (cloze) {
+      const cardSpecs: { type: string; question: object; answer: object }[] = [];
+
+      if (cloze) {
+        cardSpecs.push({
+          type: "cloze",
+          question: { text: cloze.text },
+          answer: { text: cloze.answer },
+        });
+      }
+
+      if (words.length >= 4 && words.length <= 14) {
+        cardSpecs.push({
+          type: "scramble",
+          question: { words: scrambledOrder(words) },
+          answer: { words },
+        });
+      }
+
+      // Listening card: browser TTS reads the sentence (no audio file required),
+      // learner types what they heard.
       cardSpecs.push({
-        type: "cloze",
-        question: { text: cloze.text },
-        answer: { text: cloze.answer },
+        type: "listening",
+        question: { tts: sentence },
+        answer: { text: sentence },
       });
+
+      for (const spec of cardSpecs) {
+        const defaults = newCardDefaults();
+        insertCard.run(
+          noteId,
+          deckId,
+          spec.type,
+          JSON.stringify(spec.question),
+          JSON.stringify(spec.answer),
+          defaults.due,
+          defaults.stability,
+          defaults.difficulty,
+          defaults.elapsed_days,
+          defaults.scheduled_days,
+          defaults.reps,
+          defaults.lapses,
+          defaults.state
+        );
+        cardsCreated++;
+      }
     }
 
-    if (words.length >= 4 && words.length <= 14) {
-      cardSpecs.push({
-        type: "scramble",
-        question: { words: shuffle(words) },
-        answer: { words },
-      });
-    }
+    return { deckId, cardsCreated };
+  });
 
-    // Listening card: browser TTS reads the sentence (no audio file required),
-    // learner types what they heard.
-    cardSpecs.push({
-      type: "listening",
-      question: { tts: sentence },
-      answer: { text: sentence },
-    });
-
-    for (const spec of cardSpecs) {
-      const defaults = newCardDefaults();
-      insertCard.run(
-        noteId,
-        deckId,
-        spec.type,
-        JSON.stringify(spec.question),
-        JSON.stringify(spec.answer),
-        defaults.due,
-        defaults.stability,
-        defaults.difficulty,
-        defaults.elapsed_days,
-        defaults.scheduled_days,
-        defaults.reps,
-        defaults.lapses,
-        defaults.state
-      );
-      cardsCreated++;
-    }
-  }
-
-  return { deckId, cardsCreated, sentencesProcessed: Math.min(sentences.length, MAX_SENTENCES) };
+  const { deckId, cardsCreated } = importAll(toProcess);
+  return { deckId, cardsCreated, sentencesProcessed: toProcess.length };
 }

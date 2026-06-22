@@ -26,10 +26,11 @@ function RatingRow({ onRate }: { onRate: Props["onRate"] }) {
 }
 
 function Media({ media }: { media: StudyCard["media"] }) {
-  if (!media?.image) return null;
+  const [failed, setFailed] = useState(false);
+  if (!media?.image || failed) return null;
   return (
     <div className="card-media">
-      <img src={`/media/${media.image}`} alt="" />
+      <img src={`/media/${media.image}`} alt="" onError={() => setFailed(true)} />
     </div>
   );
 }
@@ -79,7 +80,9 @@ function ListeningCard({ card, onRate }: Props) {
 
   const playAudio = () => {
     if (audioUrl) {
-      new Audio(audioUrl).play();
+      // Autoplay (without a user gesture) is blocked by most browsers and
+      // rejects the play() promise; that's expected on mount, so swallow it.
+      new Audio(audioUrl).play().catch(() => {});
     } else if (card.question.tts) {
       speak(card.question.tts);
     }
