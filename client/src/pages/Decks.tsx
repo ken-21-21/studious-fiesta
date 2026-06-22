@@ -70,7 +70,7 @@ export default function Decks() {
             <div className="deck-item-info">
               <strong>{d.name}</strong>
               <div className="deck-item-stats">
-                {d.card_count} cards · {d.due_count} due
+                {d.card_count} {d.card_count === 1 ? "card" : "cards"} · {d.due_count} due
               </div>
             </div>
             <div className="deck-item-actions">
