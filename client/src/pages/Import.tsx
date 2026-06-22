@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { importApkg, importTextbook } from "../lib/api";
+import { ErrorMessage } from "../components/Loaders";
 
 export default function Import() {
   const [file, setFile] = useState<File | null>(null);
@@ -59,7 +60,15 @@ export default function Import() {
         <button disabled={!file || busy} onClick={handleImport} className="btn-primary lg">
           {busy ? "Importing..." : "Import"}
         </button>
-        {status && <p className={status.startsWith("Error") ? "error-text mt-8" : "mt-8"}>{status}</p>}
+        {status && (
+          <div className="mt-8">
+            {status.startsWith("Error") ? (
+              <ErrorMessage message={status.replace("Error: ", "")} />
+            ) : (
+              <p style={{ color: "var(--success)", fontWeight: 500 }}>{status}</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

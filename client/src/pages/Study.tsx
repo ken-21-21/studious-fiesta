@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { fetchQueue, reviewCard, type StudyCard } from "../lib/api";
 import StudyCardView from "../components/StudyCard";
+import { CardSkeletonLoader, ErrorMessage } from "../components/Loaders";
 
 export default function Study() {
   const [params] = useSearchParams();
@@ -34,13 +35,27 @@ export default function Study() {
     }
   };
 
-  if (loading) return <div className="empty-state"><p>Loading cards...</p></div>;
+  if (loading) return (
+    <div className="card-container">
+      <div className="page-header mb-4">
+        <Link to="/" className="nav-link">
+          <span>←</span> Decks
+        </Link>
+      </div>
+      <CardSkeletonLoader />
+    </div>
+  );
 
   if (error) {
     return (
-      <div className="empty-state">
-        <p className="error-text">{error}</p>
-        <button onClick={load} className="mt-8">Retry</button>
+      <div className="card-container">
+        <div className="page-header mb-4">
+          <Link to="/" className="nav-link">
+            <span>←</span> Decks
+          </Link>
+        </div>
+        <ErrorMessage message={error} />
+        <button onClick={load} className="btn-secondary mt-8">Retry</button>
       </div>
     );
   }

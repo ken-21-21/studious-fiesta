@@ -63,4 +63,27 @@ describe("study-material gating on reading confidence", () => {
     expect((scramble!.answer as any).reading).toBeUndefined();
     expect((scramble!.answer as any).readingUncertain).toBe(true);
   });
+
+  it("respects user corrections even when source explicitly provides a reading", async () => {
+    // Mock the corrections DB lookup module for this test.
+    const readingsModule = await import("../src/lib/corrections.js");
+    const original = readingsModule.getReadingCorrection;
+    readingsModule.getReadingCorrection = (surface: string) => {
+      if (surface === "角") return { id: 1, kind: "reading", scope: "global", value: "つの", created_at: "" };
+      return null;
+    };
+    try {
+      const notes = await generateLessonNotes(vocabLesson(["角 かど corner"]));
+      const note = notes[0];
+      const q = note.cards[0].question as any;
+      expect(q.reading).toBe("つの"); // Overridden from 'かど'
+      expect(q.furigana[0].reading).toBe("つの");
+      
+      const analysis = note.analysis![0];
+      expect(analysis.label).toBe("つの");
+      expect(analysis.confidence).toBe(1);
+    } finally {
+      readingsModule.getReadingCorrection = original;
+    }
+  });
 });

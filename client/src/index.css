@@ -22,8 +22,15 @@
   --accent-glow: rgba(139, 92, 246, 0.4);
   --accent-bg: rgba(139, 92, 246, 0.1);
   --accent-border: rgba(139, 92, 246, 0.5);
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --success: #10b981;
+  --info: #3b82f6;
+  --glass-bg: rgba(30, 33, 43, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
   
   --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.8), 0 0 40px var(--accent-glow);
   --shadow-glow: 0 0 20px var(--accent-glow);
 
@@ -305,4 +312,13 @@ code {
   font-weight: 500;
   border: 1px solid var(--border);
   color: var(--text-h);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
 }

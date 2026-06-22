@@ -45,13 +45,13 @@ export default function Decks() {
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2>Decks</h2>
-        <Link to="/import" className="btn-primary" style={{ textDecoration: 'none' }}><button>+ Import</button></Link>
+        <Link to="/import" className="btn-primary">+ Import</Link>
       </div>
       
       {error && (
         <div style={{ marginBottom: '24px' }}>
           <ErrorMessage message={error} />
-          <button onClick={load} style={{ marginTop: '16px' }}>Retry</button>
+          <button className="btn-secondary" onClick={load} style={{ marginTop: '16px' }}>Retry</button>
         </div>
       )}
       

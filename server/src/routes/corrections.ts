@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { addCorrection, type CorrectionKind, type CorrectionScope } from "../lib/corrections.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const correctionsRouter = Router();
 
@@ -10,16 +11,19 @@ const SCOPES: CorrectionScope[] = [
   "occurrence", "sentence", "source", "deck", "matching", "global",
 ];
 
-correctionsRouter.post("/", async (req, res) => {
+correctionsRouter.post("/", asyncHandler(async (req, res) => {
   const { kind, surface, context, scope, value, note, sourceId } = req.body ?? {};
   if (!KINDS.includes(kind)) {
-    return res.status(400).json({ error: `kind must be one of: ${KINDS.join(", ")}` });
+    res.status(400).json({ error: `kind must be one of: ${KINDS.join(", ")}` });
+    return;
   }
   if (typeof value !== "string" || !value.trim()) {
-    return res.status(400).json({ error: "value is required" });
+    res.status(400).json({ error: "value is required" });
+    return;
   }
   if (scope !== undefined && !SCOPES.includes(scope)) {
-    return res.status(400).json({ error: `scope must be one of: ${SCOPES.join(", ")}` });
+    res.status(400).json({ error: `scope must be one of: ${SCOPES.join(", ")}` });
+    return;
   }
   const id = await addCorrection({
     kind,
@@ -31,4 +35,4 @@ correctionsRouter.post("/", async (req, res) => {
     sourceId: Number.isInteger(sourceId) ? sourceId : undefined,
   });
   res.status(201).json({ id });
-});
+}));

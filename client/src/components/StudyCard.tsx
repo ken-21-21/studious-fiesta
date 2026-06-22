@@ -18,13 +18,15 @@ function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: St
   const [open, setOpen] = useState(false);
   const [analysis, setAnalysis] = useState<NoteAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const toggle = () => {
     if (!open && analysis.length === 0) {
       setLoading(true);
+      setError(null);
       fetchNoteAnalysis(noteId)
         .then(setAnalysis)
-        .catch(console.error)
+        .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     }
     setOpen(!open);
@@ -44,6 +46,8 @@ function AnalysisPanel({ noteId, provenance }: { noteId: number; provenance?: St
           )}
           {loading ? (
             <p>Loading analysis...</p>
+          ) : error ? (
+            <p className="error-text">Failed to load analysis: {error}</p>
           ) : analysis.length === 0 ? (
             <p>No analysis found.</p>
           ) : (

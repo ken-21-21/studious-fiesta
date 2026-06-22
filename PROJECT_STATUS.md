@@ -7,7 +7,7 @@ and updated on every change. Last synced commit and date are recorded below.
 - **Last synced commit (mine):** `df083a8` — Switch two-agent workflow to separate branches
 - **Antigravity's branch:** `ANTILOG` (see `CLAUDE.md` for the two-branch
   reconciliation protocol)
-- **Last synced commit (Antigravity):** `f0b42bb` — API Hardening (N+1 query fix)
+- **Last synced commit (Antigravity):** `f6355c5` — Phase B+: Close Corrections ↔ Analysis Loop
 - **Last updated:** 2026-06-22
 - **Tests:** 36 passing (6 files) · typecheck clean · build clean
 
@@ -81,8 +81,8 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 | A | JP pipeline: confidence, evidence, ambiguity KB, gating, corrections | ✅ Done |
 | C | Explicit, inspectable grammar annotation layer | ✅ Done |
 | B | Provenance persistence (sources + note_analyses), grammar wired into ingestion | ✅ Done |
-| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ⏳ Next |
-| D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ⬜ Planned |
+| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ✅ Done |
+| D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ⏳ Next |
 | E | Source-grounded Q&A (Claude API) + search/retrieval indexes | ⬜ Planned |
 | F | Client UI: surface confidence/evidence/grammar, correction & review UI | ⬜ Planned |
 | — | Anki field-role inference (japanese/reading/meaning/audio/…) with confidence | ⬜ Planned |

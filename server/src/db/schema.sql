@@ -123,4 +123,6 @@ CREATE INDEX IF NOT EXISTS idx_corrections_lookup ON corrections(kind, surface);
 
 CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(due);
 CREATE INDEX IF NOT EXISTS idx_cards_deck ON cards(deck_id);
+CREATE INDEX IF NOT EXISTS idx_cards_note ON cards(note_id);
 CREATE INDEX IF NOT EXISTS idx_notes_deck ON notes(deck_id);
+CREATE INDEX IF NOT EXISTS idx_review_logs_card ON review_logs(card_id);

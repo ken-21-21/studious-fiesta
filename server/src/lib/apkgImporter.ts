@@ -66,16 +66,14 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     throw new Error("Not a valid .apkg file (collection database is corrupt)");
   }
 
-  // notes: id, flds (fields separated by \x1f), tags
-  let notesRes, cardsRes;
+  let notesExist = false;
   try {
-    notesRes = sqlDb.exec("SELECT id, flds, tags FROM notes");
-    cardsRes = sqlDb.exec("SELECT nid, ord FROM cards");
-  } finally {
-    sqlDb.close();
-  }
+    const checkRes = sqlDb.exec("SELECT 1 FROM notes LIMIT 1");
+    notesExist = checkRes.length > 0 && checkRes[0].values.length > 0;
+  } catch {}
 
-  if (!notesRes.length) {
+  if (!notesExist) {
+    sqlDb.close();
     throw new Error("No notes found in this .apkg file");
   }
 
@@ -109,18 +107,21 @@ export async function importApkg(filePath: string, deckName: string, originalFil
   const { sourceId, deckId } = setupTransaction();
 
   const cardOrdsByNid = new Map<number, number[]>();
-  if (cardsRes.length) {
-    for (const row of cardsRes[0].values) {
-      const [nid, ord] = row as [number, number];
+  try {
+    const cardsStmt = sqlDb.prepare("SELECT nid, ord FROM cards");
+    while (cardsStmt.step()) {
+      const [nid, ord] = cardsStmt.get() as [number, number];
       const list = cardOrdsByNid.get(nid) ?? [];
       list.push(ord);
       cardOrdsByNid.set(nid, list);
     }
+    cardsStmt.free();
+  } catch (e) {
+    console.error("Error reading cards table:", e);
   }
 
   let imported = 0;
   const CHUNK_SIZE = 500;
-  const values = notesRes[0].values;
 
   const processChunk = db.transaction((chunk: any[]) => {
     let chunkImported = 0;
@@ -179,9 +180,24 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     return chunkImported;
   });
 
-  for (let i = 0; i < values.length; i += CHUNK_SIZE) {
-    const chunk = values.slice(i, i + CHUNK_SIZE);
-    imported += processChunk(chunk);
+  try {
+    const notesStmt = sqlDb.prepare("SELECT id, flds, tags FROM notes");
+    let chunk: any[] = [];
+    while (notesStmt.step()) {
+      chunk.push(notesStmt.get());
+      if (chunk.length >= CHUNK_SIZE) {
+        imported += processChunk(chunk);
+        chunk = [];
+        // Yield to event loop
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    if (chunk.length > 0) {
+      imported += processChunk(chunk);
+    }
+    notesStmt.free();
+  } finally {
+    sqlDb.close();
   }
 
   return { deckId, cardsImported: imported };

@@ -96,14 +96,23 @@ interface TermAnalysis {
 }
 
 async function analyzeTerm(term: string, explicitReading?: string): Promise<TermAnalysis> {
-  // A source-provided reading (e.g. an Anki/vocab-list reading column) is
-  // trustworthy: treat it as whole-word ruby and skip disambiguation doubt.
-  if (explicitReading) {
-    const reading = kataToHira(explicitReading);
-    const tokens = await tokenize(term);
+  // 1. A user correction on the whole term overrides everything, even explicit source readings.
+  const correction = (await import("./corrections.js")).getReadingCorrection?.(term) ?? null;
+  const userReading = correction ? correction.value : null;
+
+  // A source-provided reading or user correction is trustworthy: treat it as
+  // whole-word ruby and skip disambiguation doubt.
+  const trustedReading = userReading ?? explicitReading;
+  if (trustedReading) {
+    const reading = kataToHira(trustedReading);
+    const tokens = await tokenize(term, { sourceFurigana: { [term]: reading } });
     const content = tokens.filter((t) => t.isContentWord);
     const target = content.sort((a, b) => b.surface.length - a.surface.length)[0] ?? tokens[0];
-    const pitch = target ? await lookupPitch(target.base, target.reading) : null;
+    const pitch = (await lookupPitch(term, reading)) ?? (target ? await lookupPitch(target.base, target.reading) : null);
+    
+    const evidenceSource = userReading ? "user_correction" : "source_furigana";
+    const evidenceDetail = userReading ? `User-corrected reading (scope: ${correction!.scope})` : "Reading supplied by source vocabulary list";
+
     return {
       furigana: [{ text: term, reading }],
       reading,
@@ -111,7 +120,7 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
       pitch,
       readingUncertain: false,
       alternatives: [],
-      // A source-supplied reading is a single high-confidence whole-word claim.
+      // A source-supplied or user-corrected reading is a single high-confidence whole-word claim.
       analysis: [
         {
           kind: "reading",
@@ -119,14 +128,14 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
           label: reading,
           spanStart: null,
           spanEnd: null,
-          confidence: 0.95,
+          confidence: userReading ? 1 : 0.95,
           band: "high",
           needsReview: false,
           analyzerName: null,
           analyzerVersion: null,
-          evidence: [{ source: "source_furigana", detail: "Reading supplied by source vocabulary list" }],
+          evidence: [{ source: evidenceSource, detail: evidenceDetail }],
           alternatives: [],
-          payload: { surface: term, selected: reading, source: "source_furigana" },
+          payload: { surface: term, selected: reading, source: evidenceSource },
         },
       ],
     };
@@ -148,7 +157,7 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
   if (!readingUncertain) {
     const target = content.sort((a, b) => b.surface.length - a.surface.length)[0] ?? tokens[0];
     if (target && !target.readingDecision.needsReview) {
-      pitch = await lookupPitch(target.base, target.reading);
+      pitch = (await lookupPitch(term, reading)) ?? (await lookupPitch(target.base, target.reading));
     }
   }
 
@@ -388,9 +397,20 @@ export async function syncNoteCards(noteId: number) {
   
   let spec: NoteSpec | null = null;
   if (tags.includes("vocabulary")) {
+    const analysisRows = db.prepare("SELECT evidence FROM note_analyses WHERE note_id = ? AND kind = 'reading' AND surface = ?").all(noteId, fields.Term) as {evidence: string}[];
+    let wasSourceFurigana = false;
+    for (const r of analysisRows) {
+      try {
+        const evs = JSON.parse(r.evidence);
+        if (evs.some((e: any) => e.source === "source_furigana")) {
+          wasSourceFurigana = true;
+        }
+      } catch (e) {}
+    }
+
     spec = await vocabNote({
       term: fields.Term,
-      reading: fields.Reading || undefined,
+      reading: wasSourceFurigana ? (fields.Reading || undefined) : undefined,
       gloss: fields.Gloss
     });
   } else {
