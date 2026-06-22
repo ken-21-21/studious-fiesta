@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { db } from "../db/index.js";
 import { newCardDefaults } from "./fsrs.js";
 import { segmentTextbook, type Lesson } from "./segment.js";
@@ -23,9 +24,10 @@ function lessonLabel(lesson: Lesson): string {
   return lesson.title || "Lesson";
 }
 
+const insertSourceStmt = db.prepare("INSERT INTO sources (kind, filename, hash) VALUES (?, ?, ?)");
 const insertDeckStmt = db.prepare("INSERT INTO decks (name) VALUES (?)");
 const insertNoteStmt = db.prepare(
-  "INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'textbook', ?, ?)"
+  "INSERT INTO notes (deck_id, source, source_id, source_location, fields, tags) VALUES (?, 'textbook', ?, ?, ?, ?)"
 );
 const insertCardStmt = db.prepare(`
   INSERT INTO cards (note_id, deck_id, card_type, question, answer, media,
@@ -33,31 +35,39 @@ const insertCardStmt = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
+function hashFile(filePath: string): string {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
 // Insert one lesson's notes+cards atomically and return (deckId, cardCount).
-const persistLesson = db.transaction((deckName: string, notes: NoteSpec[]) => {
-  const deckId = Number(insertDeckStmt.run(deckName).lastInsertRowid);
-  let cardCount = 0;
-  for (const note of notes) {
-    const noteId = Number(
-      insertNoteStmt.run(deckId, JSON.stringify(note.fields), note.tags).lastInsertRowid
-    );
-    for (const card of note.cards) {
-      const d = newCardDefaults();
-      insertCardStmt.run(
-        noteId,
-        deckId,
-        card.cardType,
-        JSON.stringify(card.question),
-        JSON.stringify(card.answer),
-        JSON.stringify(card.media ?? {}),
-        d.due, d.stability, d.difficulty, d.elapsed_days, d.scheduled_days,
-        d.reps, d.lapses, d.state
+const persistLesson = db.transaction(
+  (deckName: string, notes: NoteSpec[], sourceId: number, location: Record<string, unknown>) => {
+    const deckId = Number(insertDeckStmt.run(deckName).lastInsertRowid);
+    let cardCount = 0;
+    for (const note of notes) {
+      const noteId = Number(
+        insertNoteStmt
+          .run(deckId, sourceId, JSON.stringify(location), JSON.stringify(note.fields), note.tags)
+          .lastInsertRowid
       );
-      cardCount++;
+      for (const card of note.cards) {
+        const d = newCardDefaults();
+        insertCardStmt.run(
+          noteId,
+          deckId,
+          card.cardType,
+          JSON.stringify(card.question),
+          JSON.stringify(card.answer),
+          JSON.stringify(card.media ?? {}),
+          d.due, d.stability, d.difficulty, d.elapsed_days, d.scheduled_days,
+          d.reps, d.lapses, d.state
+        );
+        cardCount++;
+      }
     }
+    return { deckId, cardCount };
   }
-  return { deckId, cardCount };
-});
+);
 
 function updateJob(id: number, fields: Record<string, unknown>) {
   const keys = Object.keys(fields);
@@ -78,6 +88,9 @@ export function createTextbookJob(filePath: string, originalFilename: string, ba
 async function runTextbookJob(id: number, filePath: string, originalFilename: string, baseDeckName: string) {
   try {
     updateJob(id, { status: "running", message: "Reading document…" });
+    const sourceId = Number(
+      insertSourceStmt.run("textbook", originalFilename, hashFile(filePath)).lastInsertRowid
+    );
     const text = await extractText(filePath, originalFilename);
 
     if (isJapaneseDoc(text)) {
@@ -105,7 +118,8 @@ async function runTextbookJob(id: number, filePath: string, originalFilename: st
       }
 
       const deckName = multi ? `${baseDeckName} — ${label}` : baseDeckName;
-      const { deckId, cardCount } = persistLesson(deckName, notes);
+      const location = { lesson: lesson.number ?? null, label };
+      const { deckId, cardCount } = persistLesson(deckName, notes, sourceId, location);
       createdDecks.push({ id: deckId, name: deckName, cards: cardCount });
       totalCards += cardCount;
       updateJob(id, { progress: i + 1, cards_created: totalCards });

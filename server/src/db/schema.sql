@@ -4,14 +4,29 @@ CREATE TABLE IF NOT EXISTS decks (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A source is one ingested artifact (an uploaded .apkg or textbook file).
+-- Every note traces back to exactly one source row, so any generated card
+-- can be answered with "where did this come from?" rather than asserted
+-- as ground truth with no provenance.
+CREATE TABLE IF NOT EXISTS sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,             -- 'apkg' | 'textbook' | 'manual'
+  filename TEXT NOT NULL,
+  hash TEXT,                      -- sha256 of the uploaded file, for de-dup/citation
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
   source TEXT NOT NULL,           -- 'apkg' | 'textbook' | 'manual'
+  source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+  source_location TEXT,           -- JSON: {lesson?, section?, line?, ankiNoteId?, ...}
   fields TEXT NOT NULL,           -- JSON: arbitrary field map (Front/Back/Sentence/Translation...)
   tags TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_notes_source ON notes(source_id);
 
 CREATE TABLE IF NOT EXISTS cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

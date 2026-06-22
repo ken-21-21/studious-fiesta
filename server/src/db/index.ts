@@ -18,3 +18,15 @@ db.pragma("foreign_keys = ON");
 
 const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf-8");
 db.exec(schema);
+
+// `CREATE TABLE IF NOT EXISTS` doesn't add columns to a table that already
+// exists from before this column was introduced. Patch older databases
+// in place so source provenance survives across app upgrades.
+function ensureColumn(table: string, column: string, ddl: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+ensureColumn("notes", "source_id", "source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL");
+ensureColumn("notes", "source_location", "source_location TEXT");

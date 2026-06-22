@@ -61,7 +61,7 @@ importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), async (req, r
     path.basename(req.file.originalname, ".apkg")
   );
   try {
-    const result = await importApkg(req.file.path, deckName);
+    const result = await importApkg(req.file.path, deckName, req.file.originalname);
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message ?? "Failed to import apkg" });

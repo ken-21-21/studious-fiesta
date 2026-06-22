@@ -1,5 +1,6 @@
 import AdmZip from "adm-zip";
 import initSqlJs from "sql.js";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { db, MEDIA_DIR } from "../db/index.js";
@@ -23,7 +24,7 @@ function stripTags(html: string): string {
   return html.replace(/\[sound:[^\]]+\]/gi, "").replace(/<[^>]+>/g, "").trim();
 }
 
-export async function importApkg(filePath: string, deckName: string) {
+export async function importApkg(filePath: string, deckName: string, originalFilename = deckName) {
   let zip: AdmZip;
   try {
     zip = new AdmZip(filePath);
@@ -78,9 +79,10 @@ export async function importApkg(filePath: string, deckName: string) {
     throw new Error("No notes found in this .apkg file");
   }
 
+  const insertSource = db.prepare("INSERT INTO sources (kind, filename, hash) VALUES ('apkg', ?, ?)");
   const insertDeck = db.prepare("INSERT INTO decks (name) VALUES (?)");
   const insertNote = db.prepare(
-    "INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'apkg', ?, ?)"
+    "INSERT INTO notes (deck_id, source, source_id, source_location, fields, tags) VALUES (?, 'apkg', ?, ?, ?, ?)"
   );
   const insertCard = db.prepare(`
     INSERT INTO cards (note_id, deck_id, card_type, question, answer, media,
@@ -88,7 +90,10 @@ export async function importApkg(filePath: string, deckName: string) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  const fileHash = crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+
   const importAll = db.transaction(() => {
+    const sourceId = Number(insertSource.run(originalFilename, fileHash).lastInsertRowid);
     const deckRow = insertDeck.run(deckName);
     const deckId = Number(deckRow.lastInsertRowid);
 
@@ -120,7 +125,13 @@ export async function importApkg(filePath: string, deckName: string) {
       );
 
       const fields = { Front: stripTags(front), Back: stripTags(back), FrontHtml: front, BackHtml: back };
-      const noteRes = insertNote.run(deckId, JSON.stringify(fields), tags ?? "");
+      const noteRes = insertNote.run(
+        deckId,
+        sourceId,
+        JSON.stringify({ ankiNoteId: nid }),
+        JSON.stringify(fields),
+        tags ?? ""
+      );
       const noteId = Number(noteRes.lastInsertRowid);
 
       const ords = cardOrdsByNid.get(nid) ?? [0];

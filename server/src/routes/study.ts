@@ -32,8 +32,14 @@ studyRouter.get("/queue", (req, res) => {
         .all(now, limit);
 
   const withFields = cards.map((c: any) => {
-    const note = db.prepare("SELECT fields FROM notes WHERE id = ?").get(c.note_id) as
-      | { fields: string }
+    const note = db
+      .prepare(
+        `SELECT n.fields, n.source_location, s.id AS source_id, s.kind AS source_kind, s.filename AS source_filename
+         FROM notes n LEFT JOIN sources s ON s.id = n.source_id
+         WHERE n.id = ?`
+      )
+      .get(c.note_id) as
+      | { fields: string; source_location: string | null; source_id: number | null; source_kind: string | null; source_filename: string | null }
       | undefined;
     return {
       ...c,
@@ -41,6 +47,14 @@ studyRouter.get("/queue", (req, res) => {
       answer: JSON.parse(c.answer),
       media: JSON.parse(c.media),
       noteFields: note ? JSON.parse(note.fields) : {},
+      provenance: note?.source_id
+        ? {
+            sourceId: note.source_id,
+            kind: note.source_kind,
+            filename: note.source_filename,
+            location: note.source_location ? JSON.parse(note.source_location) : undefined,
+          }
+        : undefined,
     };
   });
 
