@@ -29,10 +29,15 @@ const uploadApkg = multer({
   fileFilter: extFilter([".apkg"]),
 });
 
-const uploadTextbook = multer({
+const uploadMedia = multer({
   dest: os.tmpdir(),
   limits: { fileSize: MAX_UPLOAD_BYTES },
-  fileFilter: extFilter([".txt", ".pdf"]),
+  fileFilter: extFilter([
+    ".txt", ".pdf", ".epub",
+    ".png", ".jpg", ".jpeg", ".webp",
+    ".mp3", ".wav", ".m4a", ".mp4",
+    ".srt", ".vtt"
+  ]),
 });
 
 // multer's `fileFilter`/size errors are passed to Express's error pipeline rather than
@@ -76,7 +81,7 @@ importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), asyncHandler(
 
 // Textbooks can be large, so they are processed as a background job (one
 // lesson at a time). Returns a jobId the client polls for progress.
-importsRouter.post("/textbook", withUpload(uploadTextbook.single("file")), (req, res, next) => {
+importsRouter.post("/textbook", withUpload(uploadMedia.single("file")), (req, res, next) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: "No file uploaded" });
