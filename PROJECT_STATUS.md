@@ -551,9 +551,11 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 | F | Client UI: surface confidence/evidence/grammar, correction & review UI | ✅ Done |
 | — | Anki field-role inference (japanese/reading/meaning/audio/…) with confidence | ✅ Done |
 
-**Decisions locked in:** OCR/ASR = local OSS (tesseract.js / whisper); Q&A LLM =
-Claude API; personal-use only (no multi-tenant/marketplace/sharing); no
-preloaded curriculum; do not rewrite from scratch.
+**Decisions locked in:** OCR = Claude API vision, ASR = cloud transcription API
+(e.g. OpenAI) — superseding the original local-OSS (tesseract.js / whisper)
+decision as of 2026-06; Q&A LLM = Claude API; personal-use only (no
+multi-tenant/marketplace/sharing); no preloaded curriculum; do not rewrite from
+scratch.
 
 ---
 
