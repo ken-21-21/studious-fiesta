@@ -9,12 +9,27 @@ import { generateLessonNotes, type NoteSpec } from "./cardgen.js";
 import { isJapaneseDoc } from "./lang.js";
 import { ensurePitchData } from "./jp/pitch.js";
 
-async function extractMediaText(filePath: string, originalFilename: string): Promise<string> {
+export async function extractMediaText(filePath: string, originalFilename: string): Promise<string> {
   const ext = path.extname(originalFilename).toLowerCase();
   
   if (ext === ".pdf") {
     const pdfParse = (await import("pdf-parse")).default;
-    return (await pdfParse(fs.readFileSync(filePath))).text;
+    const result = await pdfParse(fs.readFileSync(filePath));
+    const text: string = result.text;
+    const numpages: number = (result as any).numpages ?? 0;
+    // Scanned / image-only PDFs have no embedded text layer; pdf-parse extracts
+    // near-empty text.  Detect this early rather than silently producing 0 cards.
+    // Threshold: fewer than 50 characters per page is almost certainly a scan.
+    if (numpages > 0 && text.trim().length < numpages * 50) {
+      throw new Error(
+        `This PDF appears to be a scanned image with no extractable text layer ` +
+        `(${numpages} page${numpages === 1 ? "" : "s"}, ` +
+        `${text.trim().length} characters extracted). ` +
+        `Try exporting individual page images (.png / .jpg) and importing those — ` +
+        `the image OCR path will extract the text.`
+      );
+    }
+    return text;
   }
   
   if ([".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
@@ -32,7 +47,7 @@ async function extractMediaText(filePath: string, originalFilename: string): Pro
     const mediaType = mimeTypes[ext];
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 4096,
+      max_tokens: 8192, // raised from 4096 to reduce truncation risk on dense pages
       messages: [
         {
           role: "user",
@@ -43,6 +58,13 @@ async function extractMediaText(filePath: string, originalFilename: string): Pro
         },
       ],
     });
+    // Detect truncation: if the model hit max_tokens the output is incomplete.
+    if (response.stop_reason === "max_tokens") {
+      throw new Error(
+        "The image contains more text than could be processed in one pass (OCR response was truncated at max_tokens). " +
+        "Try cropping the image to a smaller section and re-importing."
+      );
+    }
     const block = response.content[0];
     return block.type === "text" ? block.text : "";
   }
@@ -78,6 +100,10 @@ async function extractMediaText(filePath: string, originalFilename: string): Pro
         const text = html
           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          // Strip <rt> content (furigana readings) BEFORE stripping remaining tags.
+          // Without this, <ruby>漢字<rt>かんじ</rt></ruby> would become "漢字かんじ"
+          // in the extracted text, corrupting tokenisation for furigana-heavy EPUBs.
+          .replace(/<rt[^>]*>[\s\S]*?<\/rt>/gi, "")
           .replace(/<[^>]+>/g, " ")
           .replace(/&nbsp;/gi, " ")
           .replace(/&lt;/gi, "<")
@@ -91,7 +117,18 @@ async function extractMediaText(filePath: string, originalFilename: string): Pro
     return fullText;
   }
   
-  const rawText = fs.readFileSync(filePath, "utf-8");
+  // Default path: plain text.  Validate UTF-8 strictly rather than silently
+  // accepting mojibake from e.g. Shift-JIS encoded Japanese .txt files.
+  let rawText: string;
+  try {
+    rawText = new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(filePath));
+  } catch {
+    throw new Error(
+      `"${originalFilename}" does not appear to be valid UTF-8. ` +
+      `Japanese .txt files are sometimes Shift-JIS encoded — ` +
+      `please re-save the file as UTF-8 before importing.`
+    );
+  }
   
   if (ext === ".srt" || ext === ".vtt") {
     return rawText

@@ -10,7 +10,57 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 210 passing (23 files) · typecheck clean · build clean (server + client)
+- **Tests:** 227 passing (25 files) · typecheck clean · build clean (server + client)
+
+### Ingestion robustness hardening — apkg + textbook (2026-06-23)
+Stress-tested both importers against real-world and non-standard inputs. All
+confirmed issues fixed with regression tests; one item deferred (see below).
+
+**Part A — Anki .apkg importer (`apkgImporter.ts`)**
+
+| # | Issue | Fix |
+|---|-------|-----|
+| A1 | **Cloze notetype** — `{{c1::answer}}` markup passed through `stripTags` unchanged, appearing raw in card front | Added `stripCloze()` / `clozeToQuestion()` helpers; detect Cloze models via `model.type === 1`; question shows `[...]` blanks, answer resolves fills |
+| A2 | **Multi-template reversed cards** — both `ord=0` and `ord=1` produced identical Front→Back cards | Parse `model.tmpls[ord].qfmt/afmt` via `templatePrimaryFieldIndex()`; each ord now uses the correct question/answer fields |
+| A3 | **`collection.anki21b`** (zstd-compressed, Anki 2.1.50+) — silently reported as "no collection db found" (corrupt) | Detect the entry and throw a clear "unsupported format — re-export with legacy compatibility" error instead |
+| A4 | **Multi-deck .apkg flattened** — all notes dumped into one deck | Read `col.decks` JSON + card `did`; create one app deck per Anki deck; Anki sub-deck `::` separators shown as ` > ` |
+| A5 | **Basic-card field mapping ignored** — `parts[0]/parts[1]` used even when field inference found a different primary/meaning field | Template-based (`tmpls` qfmt/afmt) overrides first; for Japanese decks `isJapaneseDeck=true` uses inferred indices; non-Japanese falls back to `parts[0]/parts[1]` via the template or default path |
+| A6 | **Orphaned notes** (no card row) — behaviour confirmed: falls back to `ord=0`, imports a basic card | Documented, regression test added |
+| A7 | **HTML-heavy fields** — `<b>`, `<div style=…>`, etc. already stripped by `stripTags` | Confirmed working; regression test added |
+
+Schema robustness: `col.decks` column and cards `did` column both read with
+graceful fallback for minimal test fixtures / old `anki2` exports that omit them.
+
+Return value extended: `{ deckId, deckIds, cardsImported }` — `deckId` is
+the first deck (backwards-compatible); `deckIds` lists all created decks.
+
+**Part B — Textbook/media importer (`jobs.ts`)**
+
+| # | Issue | Fix |
+|---|-------|-----|
+| B7 | **Scanned PDFs** (image-only, no text layer) — `pdf-parse` returns near-empty text; 0 cards created silently | Detect `text.length < numpages * 50` after extraction; throw clear "scanned image — try importing page images instead" error |
+| B8 | **EPUB `<ruby><rt>` furigana** — `<rt>かんじ</rt>` content concatenated into extracted text, corrupting tokenisation | Strip `<rt>…</rt>` content before stripping remaining tags (not just the tag wrappers) |
+| B9 | **OCR truncation** (`stop_reason === "max_tokens"`) — partial page silently returned | Raised `max_tokens` from 4096 → 8192; added `stop_reason` check; throws actionable "crop the image" error if still truncated |
+| B10 | **Non-UTF-8 `.txt`** (e.g. Shift-JIS) — `readFileSync(…, "utf-8")` produced silent mojibake | Replaced with `TextDecoder("utf-8", { fatal: true })` — throws clear "not valid UTF-8, try re-saving as UTF-8" error |
+
+`extractMediaText` is now a named export for direct unit testing.
+
+**Deferred (out-of-scope or low-risk):**
+- **B9 live truncation test** — confirming `stop_reason === "max_tokens"` in a real
+  OCR response requires a live Anthropic API call with a very dense image; the
+  detection code is in place and unit-testable via mocks. No live API in CI.
+- **AnkiDroid schema quirks / mobile exports** — no schema differences found in
+  published AnkiDroid source; the `did` column fallback handles missing columns.
+- **Audio file size/duration limits** — OpenAI enforces 25 MB; multer already
+  caps uploads at 500 MB on our end; considered acceptable for personal use.
+
+**CodeQL notes:** Two pre-existing `js/path-injection` alerts in `jobs.ts`
+(`fs.readFileSync(filePath)` for PDF and plain-text paths). `filePath` is
+multer's server-generated temp path, not the user-supplied filename — false
+positives. The same patterns existed before this change.
+
+**New test files:** `server/test/apkgImporter.edgecases.test.ts` (9 tests),
+`server/test/jobs.edgecases.test.ts` (8 tests).
 
 ### apkg import: Japanese-content notes routed through analysis/cardgen pipeline (2026-06-23)
 - **Root-cause fix:** `colStmt.get()` in sql.js requires `step()` to be called first;

@@ -32,6 +32,34 @@ function stripTags(html: string): string {
   return html.replace(/\[sound:[^\]]+\]/gi, "").replace(/<[^>]+>/g, "").trim();
 }
 
+// Strip Anki cloze deletion markers, keeping only the answer text.
+// {{c1::answer::hint}} → answer  |  {{c1::answer}} → answer
+function stripCloze(text: string): string {
+  return text.replace(/\{\{c\d+::([^:}]+)(?:::[^}]*)?\}\}/g, "$1");
+}
+
+// Convert cloze text to a question form, replacing each deletion with a blank.
+// {{c1::answer::hint}} → [hint]  |  {{c1::answer}} → [...]
+function clozeToQuestion(text: string): string {
+  return text.replace(
+    /\{\{c\d+::(?:[^:}]+)(?:::([^}]*))?\}\}/g,
+    (_: string, hint: string | undefined) => (hint ? `[${hint}]` : "[...]")
+  );
+}
+
+// Return the index of the first Anki field referenced by an Anki template
+// format string (qfmt / afmt).  {{FrontSide}} and conditional tags
+// ({{#Field}}/{{^Field}}/{{/Field}}) are ignored.
+function templatePrimaryFieldIndex(fmt: string, fieldNames: string[]): number {
+  for (const m of fmt.matchAll(/\{\{([^#^/!{][^}]*?)\}\}/g)) {
+    const name = m[1].trim();
+    if (name === "FrontSide" || name.includes(":")) continue;
+    const idx = fieldNames.indexOf(name);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
 export async function importApkg(filePath: string, deckName: string, originalFilename = deckName) {
   let zip: AdmZip;
   try {
@@ -56,7 +84,16 @@ export async function importApkg(filePath: string, deckName: string, originalFil
   const collEntry =
     entries.find((e) => e.entryName === "collection.anki21") ??
     entries.find((e) => e.entryName === "collection.anki2");
-  if (!collEntry) throw new Error("Not a valid .apkg file (no collection db found)");
+  if (!collEntry) {
+    if (entries.some((e) => e.entryName === "collection.anki21b")) {
+      throw new Error(
+        "This .apkg uses the zstd-compressed format (collection.anki21b) exported by Anki 2.1.50+. " +
+        "Re-export from Anki using File → Export → 'Anki 2.1 deck (.apkg)' with 'Support older Anki versions' checked, " +
+        "or import via the desktop Anki app and re-export as a legacy-compatible package."
+      );
+    }
+    throw new Error("Not a valid .apkg file (no collection db found)");
+  }
 
   const mediaEntry = entries.find((e) => e.entryName === "media");
   let mediaMap: Record<string, string> = {};
@@ -128,19 +165,29 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     });
   });
 
-  const setupTransaction = db.transaction(() => {
-    const sourceId = Number(insertSource.run(originalFilename, fileHash).lastInsertRowid);
-    const deckRow = insertDeck.run(deckName);
-    const deckId = Number(deckRow.lastInsertRowid);
-    return { sourceId, deckId };
-  });
+  // Read col: models + decks.  The decks column may be absent in minimal test
+  // fixtures or very old anki2 exports, so fall back gracefully.
+  let modelsJson = "{}";
+  let ankiDecks: Record<string, any> = {};
+  try {
+    const colStmt = sqlDb.prepare("SELECT models, decks FROM col");
+    colStmt.step();
+    const row = colStmt.get() as [string, string | null];
+    modelsJson = row[0] ?? "{}";
+    if (row[1]) {
+      try { ankiDecks = JSON.parse(row[1]); } catch {}
+    }
+    colStmt.free();
+  } catch {
+    // Fall back to models-only (older schema / minimal fixture)
+    try {
+      const colStmt = sqlDb.prepare("SELECT models FROM col");
+      colStmt.step();
+      modelsJson = (colStmt.get() as [string])[0] ?? "{}";
+      colStmt.free();
+    } catch {}
+  }
 
-  const { sourceId, deckId } = setupTransaction();
-
-  const colStmt = sqlDb.prepare("SELECT models FROM col");
-  colStmt.step(); // advance to the first (and only) row before reading
-  const [modelsJson] = colStmt.get() as [string];
-  colStmt.free();
   let models: Record<string, any> = {};
   if (modelsJson) {
     try {
@@ -167,6 +214,11 @@ export async function importApkg(filePath: string, deckName: string, originalFil
   } catch (e) {
     console.error("Error reading samples:", e);
   }
+
+  // Create the source row first; it's needed by insertCorrection below.
+  const sourceId = db.transaction(() =>
+    Number(insertSource.run(originalFilename, fileHash).lastInsertRowid)
+  )();
 
   type FieldMapping = { japaneseIdx: number; readingIdx: number; meaningIdx: number; audioIdx: number; isJapaneseDeck: boolean };
   const modelFieldMap = new Map<string, FieldMapping>();
@@ -242,19 +294,81 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     }
   })();
 
-  const cardOrdsByNid = new Map<number, number[]>();
-  try {
-    const cardsStmt = sqlDb.prepare("SELECT nid, ord FROM cards");
-    while (cardsStmt.step()) {
-      const [nid, ord] = cardsStmt.get() as [number, number];
-      const list = cardOrdsByNid.get(nid) ?? [];
-      list.push(ord);
-      cardOrdsByNid.set(nid, list);
+  // Build per-model: (a) cloze flag (type===1), (b) template-based q/a field indices.
+  // These are in-memory only — no DB writes needed.
+  const modelClozeSet = new Set<string>();
+  type TemplateQA = { qIdx: number; aIdx: number };
+  const modelTemplates = new Map<string, TemplateQA[]>();
+  for (const [midStr, model] of Object.entries(models)) {
+    if (model.type === 1) modelClozeSet.add(midStr);
+    if (model.tmpls && model.flds) {
+      const fieldNames: string[] = model.flds.map((f: any) => f.name as string);
+      const tmpls: TemplateQA[] = (model.tmpls as any[]).map((tmpl) => ({
+        qIdx: templatePrimaryFieldIndex(tmpl.qfmt ?? "", fieldNames),
+        aIdx: templatePrimaryFieldIndex(tmpl.afmt ?? "", fieldNames),
+      }));
+      modelTemplates.set(midStr, tmpls);
     }
-    cardsStmt.free();
-  } catch (e) {
-    console.error("Error reading cards table:", e);
   }
+
+  // Read cards: track ord lists per note and (when the did column exists) the
+  // Anki deck id for each note's first card.  The did column is absent in
+  // minimal test fixtures and very old anki2 exports, so fall back gracefully.
+  const cardOrdsByNid = new Map<number, number[]>();
+  const noteAnkiDid = new Map<number, number>(); // nid → Anki deck id
+  {
+    let stmt: ReturnType<typeof sqlDb.prepare> | null = null;
+    let hasDid = true;
+    try {
+      stmt = sqlDb.prepare("SELECT nid, ord, did FROM cards");
+    } catch {
+      hasDid = false;
+      try { stmt = sqlDb.prepare("SELECT nid, ord FROM cards"); } catch (e) {
+        console.error("Error preparing cards query:", e);
+      }
+    }
+    if (stmt) {
+      try {
+        while (stmt.step()) {
+          const row = stmt.get() as number[];
+          const nid = row[0];
+          const ord = row[1];
+          const did = hasDid ? row[2] : 1;
+          const list = cardOrdsByNid.get(nid) ?? [];
+          list.push(ord);
+          cardOrdsByNid.set(nid, list);
+          if (!noteAnkiDid.has(nid)) noteAnkiDid.set(nid, did);
+        }
+      } catch (e) {
+        console.error("Error reading cards table:", e);
+      }
+      stmt.free();
+    }
+  }
+
+  // Create one app deck per unique Anki deck referenced by the cards table.
+  // Anki sub-deck names use "::" as a separator; convert to " > " for display.
+  // The deckName parameter acts as a fallback for the Anki "Default" deck or
+  // when deck metadata is unavailable.
+  const appDeckByAnkiDid = new Map<number, number>(); // ankiDid → app deckId
+  db.transaction(() => {
+    const uniqueDids = new Set(noteAnkiDid.values());
+    for (const did of uniqueDids) {
+      const ankiDeckInfo = ankiDecks[String(did)] as any | undefined;
+      const rawName = ankiDeckInfo?.name as string | undefined;
+      const displayName = rawName && rawName !== "Default"
+        ? rawName.replace(/::/g, " > ")
+        : deckName;
+      appDeckByAnkiDid.set(did, Number(insertDeck.run(displayName).lastInsertRowid));
+    }
+    if (appDeckByAnkiDid.size === 0) {
+      // No cards (orphaned notes only) — create a single fallback deck.
+      appDeckByAnkiDid.set(-1, Number(insertDeck.run(deckName).lastInsertRowid));
+    }
+  })();
+
+  // Stable fallback deck id: used for notes whose nid has no card row.
+  const fallbackDeckId: number = appDeckByAnkiDid.values().next().value!;
 
   let imported = 0;
   const CHUNK_SIZE = 500;
@@ -269,7 +383,9 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     for (const row of chunk) {
       const [nid, mid, flds] = row as [number, number, string];
       const mapping = modelFieldMap.get(String(mid));
-      if (!mapping?.isJapaneseDeck) continue;
+      // Skip cloze notes in the Japanese analysis path — extract the cloze
+      // answer before deciding whether it warrants vocabNote analysis.
+      if (!mapping?.isJapaneseDeck || modelClozeSet.has(String(mid))) continue;
       const parts = flds.split("\x1f");
       const term = stripTags(parts[mapping.japaneseIdx] ?? "");
       if (!term) continue;
@@ -311,6 +427,9 @@ export async function importApkg(filePath: string, deckName: string, originalFil
           audio.unshift(...specificAudio); // Prepend so it becomes audio[0]
         }
 
+        // Resolve the app deck for this note (based on its first card's Anki did).
+        const noteDeckId = appDeckByAnkiDid.get(noteAnkiDid.get(nid) ?? -1) ?? fallbackDeckId;
+
         const spec = preAnalyzed.get(nid);
         if (spec) {
           // Japanese deck path: use the vocabNote spec for fields, analysis, and cards.
@@ -329,7 +448,7 @@ export async function importApkg(filePath: string, deckName: string, originalFil
           };
 
           const noteRes = insertNote.run(
-            deckId, sourceId,
+            noteDeckId, sourceId,
             JSON.stringify({ ankiNoteId: nid }),
             JSON.stringify(noteFields),
             spec.tags
@@ -352,7 +471,7 @@ export async function importApkg(filePath: string, deckName: string, originalFil
           for (const card of spec.cards) {
             const d = newCardDefaults();
             insertCard.run(
-              noteId, deckId, card.cardType,
+              noteId, noteDeckId, card.cardType,
               JSON.stringify(card.question),
               JSON.stringify(card.answer),
               JSON.stringify({ ...media, ...(card.media ?? {}) }),
@@ -362,8 +481,29 @@ export async function importApkg(filePath: string, deckName: string, originalFil
             chunkImported++;
           }
         } else {
-          // Non-Japanese / analysis-fallback path: plain basic card, unchanged behavior.
-          const fields: any = { Front: stripTags(front), Back: stripTags(back), FrontHtml: front, BackHtml: back };
+          // Non-Japanese / analysis-fallback path.
+          //
+          // Question/answer field selection priority:
+          //  1. Template-based: parse the model's qfmt/afmt for this card's ord to
+          //     find which field drives the question and which drives the answer.
+          //     This correctly handles reversed-card models (ord 1 swaps front/back)
+          //     and any other multi-template model.
+          //  2. Field-mapping inference: use the japaneseIdx/meaningIdx inferred
+          //     from field names + sample content.
+          //  3. Default fallback: parts[0] (front) / parts[1] (back).
+          //
+          // Cloze models (type===1) are handled separately: {{c1::answer}} markup
+          // is converted to a blank-form question and an answer with fills resolved.
+
+          const isCloze = modelClozeSet.has(String(mid));
+          const templates = modelTemplates.get(String(mid));
+
+          const fields: any = {
+            Front: stripTags(isCloze ? stripCloze(front) : front),
+            Back: stripTags(back),
+            FrontHtml: front,
+            BackHtml: back,
+          };
           if (mapping) {
             if (mapping.japaneseIdx >= 0) fields.japanese = stripTags(parts[mapping.japaneseIdx] ?? "");
             if (mapping.readingIdx >= 0) fields.reading = stripTags(parts[mapping.readingIdx] ?? "");
@@ -371,7 +511,7 @@ export async function importApkg(filePath: string, deckName: string, originalFil
           }
 
           const noteRes = insertNote.run(
-            deckId,
+            noteDeckId,
             sourceId,
             JSON.stringify({ ankiNoteId: nid }),
             JSON.stringify(fields),
@@ -382,16 +522,40 @@ export async function importApkg(filePath: string, deckName: string, originalFil
           const ords = cardOrdsByNid.get(nid) ?? [0];
           for (const ord of ords) {
             const defaults = newCardDefaults();
-            const media = {
-              image: images[0],
-              audio: audio[0],
-            };
+            const media = { image: images[0], audio: audio[0] };
+
+            let questionText: string;
+            let answerText: string;
+
+            if (isCloze) {
+              // Show blanked sentence as question; full resolved text as answer.
+              const rawText = stripTags(parts[0] ?? "");
+              questionText = clozeToQuestion(rawText);
+              answerText = stripCloze(rawText);
+            } else if (templates && templates[ord] && templates[ord].qIdx >= 0) {
+              // Template-based field selection (handles reversed-card models, etc.)
+              const tmpl = templates[ord];
+              questionText = stripTags(parts[tmpl.qIdx] ?? "");
+              answerText = tmpl.aIdx >= 0 ? stripTags(parts[tmpl.aIdx] ?? "") : fields.Back;
+            } else if (mapping?.isJapaneseDeck) {
+              // Field-mapping inference (e.g. a 6-field notetype where kanji/meaning
+              // aren't at indices 0/1)
+              questionText = stripTags(parts[mapping.japaneseIdx] ?? "");
+              answerText = mapping.meaningIdx >= 0 && mapping.meaningIdx !== mapping.japaneseIdx
+                ? stripTags(parts[mapping.meaningIdx] ?? "")
+                : fields.Back;
+            } else {
+              // Default: first two fields
+              questionText = fields.Front;
+              answerText = fields.Back;
+            }
+
             insertCard.run(
               noteId,
-              deckId,
+              noteDeckId,
               "basic",
-              JSON.stringify({ text: fields.Front, ord }),
-              JSON.stringify({ text: fields.Back }),
+              JSON.stringify({ text: questionText, ord }),
+              JSON.stringify({ text: answerText }),
               JSON.stringify(media),
               defaults.due,
               defaults.stability,
@@ -432,5 +596,6 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     sqlDb.close();
   }
 
-  return { deckId, cardsImported: imported };
+  const deckIds = [...new Set(appDeckByAnkiDid.values())];
+  return { deckId: deckIds[0] ?? -1, deckIds, cardsImported: imported };
 }
