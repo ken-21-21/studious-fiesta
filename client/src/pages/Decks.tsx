@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import { deleteDeck, fetchDecks, type Deck } from "../lib/api";
 import { SkeletonLoader, ErrorMessage } from "../components/Loaders";
@@ -12,6 +12,7 @@ const pageVariants = {
 };
 
 export default function Decks() {
+  const prefersReducedMotion = useReducedMotion();
   const [decks, setDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,12 @@ export default function Decks() {
   };
 
   if (loading) return (
-    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+    <motion.div
+      variants={pageVariants}
+      initial={prefersReducedMotion ? false : "initial"}
+      animate="animate"
+      exit="exit"
+    >
       <div className="page-header">
         <h2>Decks</h2>
       </div>
@@ -85,7 +91,12 @@ export default function Decks() {
   );
 
   return (
-    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+    <motion.div
+      variants={pageVariants}
+      initial={prefersReducedMotion ? false : "initial"}
+      animate="animate"
+      exit="exit"
+    >
       <div className="page-header">
         <h2>Decks</h2>
         <div className="flex gap-2">
@@ -107,9 +118,30 @@ export default function Decks() {
         </div>
       )}
       
-      <ul className="deck-list">
+      <motion.ul
+        className="deck-list"
+        initial={prefersReducedMotion ? false : "hidden"}
+        animate="visible"
+        variants={{
+          hidden: {},
+          visible: {
+            transition: {
+              staggerChildren: 0.05,
+            }
+          }
+        }}
+      >
         {decks.map((d) => (
-          <li key={d.id} className="deck-item">
+          <motion.li
+            key={d.id}
+            className="deck-item"
+            variants={{
+              hidden: { opacity: 0, y: 8 },
+              visible: { opacity: 1, y: 0, transition: { duration: 0.2 } },
+            }}
+            whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.01 }}
+            whileTap={prefersReducedMotion ? undefined : { scale: 0.995 }}
+          >
             <div className="deck-item-info">
               <strong>{d.name}</strong>
               <div className="deck-item-stats">
@@ -120,9 +152,9 @@ export default function Decks() {
               <Link to={`/study?deckId=${d.id}`} className="btn-primary">Study</Link>
               <button className="btn-danger" onClick={() => handleDelete(d.id)}>Delete</button>
             </div>
-          </li>
+          </motion.li>
         ))}
-      </ul>
+      </motion.ul>
       
       {decks.length > 0 && (
         <div className="mt-8 text-center">

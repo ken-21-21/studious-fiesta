@@ -1,5 +1,5 @@
-import { Routes, Route, Link, useLocation } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
+import { Routes, Route, Link, NavLink, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Toaster } from "sonner";
 import Decks from "./pages/Decks";
 import Import from "./pages/Import";
@@ -13,16 +13,26 @@ export default function App() {
   return (
     <>
       <Toaster position="top-center" theme="dark" richColors />
-      <header className="glass-panel app-header">
+      <motion.header
+        className="glass-panel app-header"
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0, transition: { duration: 0.3 } }}
+      >
         <Link to="/" className="app-title-link">
           <h1 className="app-title">FSRS Learn</h1>
         </Link>
         <nav className="nav-links">
-          <Link to="/" className="btn-secondary">Decks</Link>
-          <Link to="/add" className="btn-secondary">Add Card</Link>
-          <Link to="/import" className="btn-secondary">Import</Link>
+          <NavLink to="/" end className={({ isActive }) => `btn-secondary nav-btn${isActive ? " is-active" : ""}`}>
+            Decks
+          </NavLink>
+          <NavLink to="/add" className={({ isActive }) => `btn-secondary nav-btn${isActive ? " is-active" : ""}`}>
+            Add Card
+          </NavLink>
+          <NavLink to="/import" className={({ isActive }) => `btn-secondary nav-btn${isActive ? " is-active" : ""}`}>
+            Import
+          </NavLink>
         </nav>
-      </header>
+      </motion.header>
       <main className="main-content">
         <ErrorBoundary>
           <AnimatePresence mode="wait">
