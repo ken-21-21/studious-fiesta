@@ -199,7 +199,7 @@ function AnalysisPanel({
                     <span className="analysis-surface">{a.surface}</span>
                     <span className="analysis-label">{a.label}</span>
                     <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
-                    {a.evidence && (
+                    {Boolean(a.evidence) && (
                       <span className="analysis-evidence" title={JSON.stringify(a.evidence)}>
                         (Evidence: {typeof a.evidence === "string" ? a.evidence : "Yes"})
                       </span>

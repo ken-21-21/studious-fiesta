@@ -12,6 +12,32 @@ and updated on every change.
 - **Last updated:** 2026-06-23
 - **Tests:** 185 passing (21 files) · typecheck clean · build clean (server + client)
 
+### Scoped hardening pass (2026-06-23)
+- Hardened core write endpoints:
+  - `POST /api/qa`: now rejects whitespace-only questions, trims input before
+    prompt/FTS usage, caps FTS term count/term length, and returns a generic
+    failure message instead of surfacing raw internal error strings.
+  - `POST /api/corrections`: now validates positive-integer `sourceId`/`deckId`
+    when supplied (instead of silently ignoring malformed values), adds bounds
+    for `value`/`surface`/`context`/`note`, and normalizes string inputs.
+  - `POST /api/import/{apkg,textbook}`: filename guard (length/null-byte) and
+    deck-name sanitization now strip control characters and enforce a safe
+    fallback.
+- Centralized defensive JSON parsing via new `server/src/utils/json.ts` and
+  wired it into `routes/study.ts` and `routes/notes.ts` so malformed persisted
+  JSON remains a row-level skip/fallback instead of request-wide failure.
+- Added payload-size guard for JSON request bodies:
+  `express.json({ limit: "1mb" })`.
+- Client hardening:
+  - API envelope parsing now validates shape more defensively.
+  - Added malformed-import-result handling for textbook jobs.
+  - Added duplicate-submit guards and `unknown`-safe error handling in key
+    action paths (`Import`, `AddCard`, `Study`, `Decks`).
+- Regression coverage updates:
+  - `qa.route.test.ts`: whitespace-only question rejection.
+  - `corrections.route.test.ts`: rejects invalid numeric ids and oversized value.
+  - `imports.route.test.ts`: deck-name control-char sanitization behavior.
+
 ### Parallel build-refinement swarm, round 2 (2026-06-23)
 Same pattern as round 1, run again on the now-merged result: 3 agents in
 isolated worktrees, non-overlapping scopes (`server/src`, `client/src`,

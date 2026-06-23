@@ -75,10 +75,6 @@ interface ApiEnvelope<T> {
   error: string | null;
 }
 
-function asErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
-}
-
 async function parseEnvelope<T>(res: Response): Promise<ApiEnvelope<T>> {
   let body: unknown;
   try {
@@ -109,12 +105,14 @@ export async function fetchDecks(): Promise<Deck[]> {
 export async function deleteDeck(id: number): Promise<void> {
   const res = await fetch(`/api/decks/${id}`, { method: "DELETE" });
   if (!res.ok) {
+    let message = "Failed to delete deck";
     try {
       const body = await parseEnvelope<null>(res);
-      throw new Error(body.error ?? "Failed to delete deck");
-    } catch (err) {
-      throw new Error(asErrorMessage(err, "Failed to delete deck"));
+      message = body.error ?? message;
+    } catch {
+      // Keep default message for non-JSON/non-envelope errors.
     }
+    throw new Error(message);
   }
 }
 
