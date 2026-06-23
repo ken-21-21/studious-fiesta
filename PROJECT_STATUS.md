@@ -12,6 +12,22 @@ and updated on every change.
 - **Last updated:** 2026-06-23
 - **Tests:** 185 passing (21 files) · typecheck clean · build clean (server + client)
 
+### Frontend wiring + responsive polish (2026-06-23)
+- Fixed client wiring/lint issues that could hide stale state races or weaken type
+  safety:
+  - `Decks.tsx` and `Study.tsx` now trigger `loading/error` resets from explicit
+    reload actions instead of synchronous state writes inside effect bodies.
+  - `Study.tsx` now keys the active study session by `deckId`, so queue/review
+    state resets cleanly when switching decks.
+  - `StudyCard.tsx` now removes a remaining `any` catch branch and memoizes
+    listening-card playback handler to satisfy effect-dependency correctness.
+- Improved mobile/small-screen scaling:
+  - Header nav links now use direct link-buttons (no nested button-in-link
+    controls).
+  - Deck list rows/actions now stack and wrap safely on narrow viewports.
+  - Study analysis rows now wrap cleanly, and pitch-diagram tracks now scroll
+    horizontally instead of overflowing.
+
 ### Scoped hardening pass (2026-06-23)
 - Hardened core write endpoints:
   - `POST /api/qa`: now rejects whitespace-only questions, trims input before
