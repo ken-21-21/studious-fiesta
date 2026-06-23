@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import Anthropic from "@anthropic-ai/sdk";
 import { db } from "../db/index.js";
 import { newCardDefaults } from "./fsrs.js";
 import { segmentTextbook, type Lesson } from "./segment.js";
@@ -17,23 +18,54 @@ async function extractMediaText(filePath: string, originalFilename: string): Pro
   }
   
   if ([".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
-    const tesseract = await import("tesseract.js").catch(() => {
-      throw new Error("OCR requires tesseract.js. Please run `npm install tesseract.js` in the server directory.");
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is required for OCR.");
+    }
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const imageData = fs.readFileSync(filePath).toString("base64");
+    const mimeTypes: Record<string, "image/png" | "image/jpeg" | "image/webp"> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".webp": "image/webp",
+    };
+    const mediaType = mimeTypes[ext];
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 4096,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: imageData } },
+            { type: "text", text: "Transcribe all Japanese text visible in this image verbatim. Output only the raw text with no commentary, explanation, or translation." },
+          ],
+        },
+      ],
     });
-    const result = await tesseract.recognize(filePath, "jpn");
-    return result.data.text;
+    const block = response.content[0];
+    return block.type === "text" ? block.text : "";
   }
   
   if ([".mp3", ".wav", ".m4a", ".mp4"].includes(ext)) {
-    const whisper = (await import("whisper-node").catch(() => {
-      throw new Error("ASR requires whisper-node. Please run `npm install whisper-node` in the server directory.");
-    })).default;
-    // whisper-node creates a transcript from the audio file
-    const transcript = await whisper(filePath, { language: 'ja', task: 'transcribe' });
-    if (Array.isArray(transcript)) {
-      return transcript.map((s: any) => s.speech || s.text || "").join("\n");
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY environment variable is required for audio transcription.");
     }
-    return typeof transcript === "string" ? transcript : JSON.stringify(transcript);
+    const audioBlob = new Blob([fs.readFileSync(filePath)]);
+    const form = new FormData();
+    form.append("file", audioBlob, path.basename(filePath));
+    form.append("model", "gpt-4o-mini-transcribe");
+    form.append("language", "ja");
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + process.env.OPENAI_API_KEY },
+      body: form,
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI transcription request failed: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json() as { text: string };
+    return data.text;
   }
   
   if (ext === ".epub") {
