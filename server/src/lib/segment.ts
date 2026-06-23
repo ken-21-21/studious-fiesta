@@ -31,13 +31,20 @@ const LESSON_PATTERNS: RegExp[] = [
 ];
 
 // Section header → canonical type. Matched against a whole (short) line.
+//
+// Note: \b is a transition between \w and non-\w, and JS regex's \w is
+// ASCII-only — it never matches CJK characters. A trailing \b after a
+// Japanese alternative (e.g. 会話\b) is therefore a no-op that can never
+// match, since there's no \w/non-\w transition to find at all. We use a
+// boundary that works for both ASCII and CJK keywords: end-of-string, or
+// followed by whitespace/punctuation (not a further word character).
 const SECTION_KEYWORDS: { type: SectionType; re: RegExp }[] = [
-  { type: "vocabulary", re: /^\s*(vocabulary|vocab|word\s*list|単語|たんご|語彙|ごい)\b/i },
-  { type: "grammar", re: /^\s*(grammar|grammar\s*notes?|文法|ぶんぽう)\b/i },
-  { type: "dialogue", re: /^\s*(dialogue|dialog|conversation|会話|かいわ)\b/i },
-  { type: "culture", re: /^\s*(culture\s*notes?|culture|文化|ぶんか|culture\s*&)\b/i },
-  { type: "reading", re: /^\s*(reading|reading\s*(?:and|&)\s*writing|読み物|よみもの|読解)\b/i },
-  { type: "practice", re: /^\s*(practice|exercises?|drills?|練習|れんしゅう)\b/i },
+  { type: "vocabulary", re: /^\s*(vocabulary|vocab|word\s*list|単語|たんご|語彙|ごい)(?![\p{L}\p{N}])/iu },
+  { type: "grammar", re: /^\s*(grammar|grammar\s*notes?|文法|ぶんぽう)(?![\p{L}\p{N}])/iu },
+  { type: "dialogue", re: /^\s*(dialogue|dialog|conversation|会話|かいわ)(?![\p{L}\p{N}])/iu },
+  { type: "culture", re: /^\s*(culture\s*notes?|culture|文化|ぶんか|culture\s*&)(?![\p{L}\p{N}])/iu },
+  { type: "reading", re: /^\s*(reading|reading\s*(?:and|&)\s*writing|読み物|よみもの|読解)(?![\p{L}\p{N}])/iu },
+  { type: "practice", re: /^\s*(practice|exercises?|drills?|練習|れんしゅう)(?![\p{L}\p{N}])/iu },
 ];
 
 function matchLesson(line: string): { number: number; title: string } | null {

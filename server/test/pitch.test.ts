@@ -44,9 +44,31 @@ describe("pitch dataset and classification", () => {
   it("disambiguates homophones based on reading", async () => {
     const hashi1 = await lookupPitch("箸", "はし");
     expect(hashi1!.type).toBe("atamadaka");
-    
+
     const hashi2 = await lookupPitch("橋", "はし");
     expect(hashi2!.type).toBe("odaka");
+  });
+
+  it("returns null rather than guessing when the supplied reading doesn't match any candidate for a homograph", async () => {
+    // 上手 has two genuinely different readings in the dataset (じょうず /
+    // うわて) with different accent patterns. If the caller supplies a third
+    // reading that matches neither, we must not silently present either
+    // homograph's pattern as if it were correct for that reading.
+    const mismatched = await lookupPitch("上手", "かみて");
+    expect(mismatched).toBeNull();
+  });
+
+  it("falls back to the first candidate when no reading is supplied for a homograph", async () => {
+    const noReading = await lookupPitch("上手", null);
+    expect(noReading).not.toBeNull();
+  });
+
+  it("resolves a homograph correctly when the supplied reading matches", async () => {
+    const jouzu = await lookupPitch("上手", "じょうず");
+    expect(jouzu!.type).toBe("odaka");
+
+    const uwate = await lookupPitch("上手", "うわて");
+    expect(uwate!.type).toBe("heiban");
   });
 });
 

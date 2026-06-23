@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchNoteAnalysis,
   submitCorrection,
@@ -115,11 +115,13 @@ function CorrectionForm({
       <input
         className="correction-input"
         placeholder={`Correct reading for "${surface}"`}
+        aria-label={`Correct ${kind} for "${surface}"`}
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
       <select
         className="correction-scope"
+        aria-label="Correction scope"
         value={scope}
         onChange={(e) => setScope(e.target.value as CorrectionScope)}
       >
@@ -164,6 +166,10 @@ function AnalysisPanel({
 
   const toggle = () => {
     if (!open && analysis.length === 0) load();
+    // Closing the panel should also drop any in-progress correction form —
+    // otherwise reopening shows a stale "Cancel" state for an item the user
+    // never actually meant to keep editing.
+    if (open) setCorrectingIdx(null);
     setOpen(!open);
   };
 
@@ -201,6 +207,7 @@ function AnalysisPanel({
                     {(a.kind === "reading" || a.kind === "grammar") && (
                       <button
                         className="analysis-correct-btn"
+                        aria-expanded={correctingIdx === i}
                         onClick={() => setCorrectingIdx(correctingIdx === i ? null : i)}
                       >
                         {correctingIdx === i ? "Cancel" : "Correct"}
@@ -229,10 +236,21 @@ function AnalysisPanel({
   );
 }
 
-function RatingRow({ onRate, disabled }: { onRate: Props["onRate"]; disabled?: boolean }) {
+// `focusOnReveal` moves keyboard focus to the first rating button once the
+// card flips to its answer side. Flip-cards keep both faces mounted at all
+// times (only `rotateY` changes), so a plain `autoFocus` prop won't refire
+// on reveal — without this, focus stays on the now-hidden "Show answer"
+// button and keyboard users lose track of where they are.
+function RatingRow({ onRate, disabled, focusOnReveal }: { onRate: Props["onRate"]; disabled?: boolean; focusOnReveal?: boolean }) {
+  const firstBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (focusOnReveal) firstBtnRef.current?.focus();
+  }, [focusOnReveal]);
+
   return (
     <div className="rating-row">
-      <button className="rating-btn rating-again" onClick={() => onRate(1)} disabled={disabled}>Again</button>
+      <button ref={firstBtnRef} className="rating-btn rating-again" onClick={() => onRate(1)} disabled={disabled}>Again</button>
       <button className="rating-btn rating-hard" onClick={() => onRate(2)} disabled={disabled}>Hard</button>
       <button className="rating-btn rating-good" onClick={() => onRate(3)} disabled={disabled}>Good</button>
       <button className="rating-btn rating-easy" onClick={() => onRate(4)} disabled={disabled}>Easy</button>
@@ -270,7 +288,7 @@ function BasicCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, 
         <Media media={card.media} />
         <div className="card-prompt">{card.question.text}</div>
         <div className="card-answer">{card.answer.text}</div>
-        <RatingRow onRate={onRate} disabled={ratingDisabled} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
@@ -306,7 +324,7 @@ function ClozeCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, 
       <div className="flip-card-back card-surface">
         <Media media={card.media} />
         <div className="card-prompt">{display}</div>
-        <RatingRow onRate={onRate} disabled={ratingDisabled} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
@@ -317,10 +335,16 @@ function ListeningCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCa
   const [revealed, setRevealed] = useState(false);
   const [typed, setTyped] = useState("");
   const audioUrl = card.media?.audio ? `/media/${card.media.audio}` : null;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const playAudio = () => {
     if (audioUrl) {
-      new Audio(audioUrl).play().catch(() => {});
+      // Stop any still-playing clip first — without this, clicking the
+      // speaker button twice in quick succession overlaps two playbacks.
+      audioRef.current?.pause();
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      audio.play().catch(() => {});
     } else if (card.question.tts) {
       speak(card.question.tts);
     }
@@ -328,10 +352,13 @@ function ListeningCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCa
 
   useEffect(() => {
     playAudio();
+    return () => {
+      audioRef.current?.pause();
+    };
   }, [card.id]);
 
   return (
-    <motion.div 
+    <motion.div
       className="flip-card-inner"
       initial={false}
       animate={{ rotateY: revealed ? 180 : 0 }}
@@ -344,6 +371,7 @@ function ListeningCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCa
         <input
           className="text-input"
           placeholder="Type what you heard..."
+          aria-label="Type what you heard"
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
         />
@@ -359,7 +387,7 @@ function ListeningCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCa
         <div className="card-answer">
           {card.answer.furigana ? <Furigana segments={card.answer.furigana} /> : card.answer.text}
         </div>
-        <RatingRow onRate={onRate} disabled={ratingDisabled} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
@@ -379,7 +407,11 @@ function ScrambleCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCar
     if (placedIdx.includes(idx) || revealed) return;
     setPlacedIdx([...placedIdx, idx]);
   };
-  const undo = () => setPlacedIdx(placedIdx.slice(0, -1));
+  // Remove a specific placed word (by its position in placedIdx), not just
+  // the most recently placed one — each chip in the answer row claims to
+  // remove itself via its aria-label, so the click handler must match.
+  const removeAt = (position: number) =>
+    setPlacedIdx(placedIdx.filter((_, i) => i !== position));
 
   return (
     <motion.div 
@@ -391,18 +423,18 @@ function ScrambleCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCar
       <div className="flip-card-front card-surface">
         <div className="card-prompt">Put the sentence in order</div>
         <div className="scramble-answer-row">
-          {placedIdx.map((i) => (
+          {placedIdx.map((i, position) => (
             <span
-              key={i}
+              key={position}
               className="scramble-chip"
               role="button"
               tabIndex={0}
               aria-label={`Remove "${words[i]}" from sentence`}
-              onClick={undo}
+              onClick={() => removeAt(position)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  undo();
+                  removeAt(position);
                 }
               }}
             >
@@ -444,7 +476,7 @@ function ScrambleCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCar
           {isCorrect ? "Correct! " : "Correct order: "}
           {correct.join(" ")}
         </div>
-        <RatingRow onRate={onRate} disabled={ratingDisabled} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
@@ -471,7 +503,7 @@ function VocabCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, 
         </button>
       ) : (
         <>
-          <RatingRow onRate={onRate} disabled={ratingDisabled} />
+          <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
           <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
@@ -494,7 +526,7 @@ function PitchCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, 
         </button>
       ) : (
         <>
-          <RatingRow onRate={onRate} disabled={ratingDisabled} />
+          <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
           <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}

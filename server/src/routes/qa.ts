@@ -4,11 +4,17 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const qaRouter = Router();
 
+const MAX_QUESTION_LENGTH = 2000;
+
 qaRouter.post("/", async (req, res, next) => {
   try {
     const { question, cardId, sourceId } = req.body;
     if (!question || typeof question !== "string") {
       res.status(400).json({ data: null, error: "question is required" });
+      return;
+    }
+    if (question.length > MAX_QUESTION_LENGTH) {
+      res.status(400).json({ data: null, error: `question must be under ${MAX_QUESTION_LENGTH} characters` });
       return;
     }
     if (cardId !== undefined && (!Number.isInteger(cardId) || cardId <= 0)) {

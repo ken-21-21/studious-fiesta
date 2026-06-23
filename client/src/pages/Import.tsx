@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -15,6 +15,15 @@ export default function Import() {
   const [deckName, setDeckName] = useState("");
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
+  const navigateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // If the user navigates away during the 1.2s success delay, don't let a
+  // stale timer fire navigate() after the component has already unmounted.
+  useEffect(() => {
+    return () => {
+      if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current);
+    };
+  }, []);
 
   const handleImport = async () => {
     if (!file) return;
@@ -49,7 +58,7 @@ export default function Import() {
           { id: toastId }
         );
       }
-      setTimeout(() => navigate("/"), 1200);
+      navigateTimerRef.current = setTimeout(() => navigate("/"), 1200);
     } catch (err: any) {
       toast.error(`Error: ${err.message}`, { id: toastId });
     } finally {
@@ -65,12 +74,14 @@ export default function Import() {
       <div className="form-group mt-8">
         <input
           type="file"
+          aria-label="Import file"
           accept=".apkg,.txt,.pdf,.epub,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.mp4,.srt,.vtt"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
         <input
           type="text"
           placeholder="Deck name (optional)"
+          aria-label="Deck name"
           value={deckName}
           onChange={(e) => setDeckName(e.target.value)}
         />

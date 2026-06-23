@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ export default function AddCard() {
   const [back, setBack] = useState("");
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
+  const frontInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchDecks().then(setDecks).catch(() => {});
@@ -43,7 +44,13 @@ export default function AddCard() {
       setFront("");
       setBack("");
       toast.success("Card added.");
-      if (!keepGoing) navigate(`/study?deckId=${result.deckId}`);
+      if (keepGoing) {
+        // Return focus to Front so rapid-entry users can keep typing
+        // without reaching for the mouse between cards.
+        frontInputRef.current?.focus();
+      } else {
+        navigate(`/study?deckId=${result.deckId}`);
+      }
     } catch (err: any) {
       toast.error(err.message ?? "Failed to add card");
     } finally {
@@ -57,7 +64,7 @@ export default function AddCard() {
       <p>Quickly add a single front/back card without a full import.</p>
 
       <div className="form-group mt-8">
-        <select value={deckId} onChange={(e) => setDeckId(e.target.value)}>
+        <select aria-label="Deck" value={deckId} onChange={(e) => setDeckId(e.target.value)}>
           <option value="">New deck…</option>
           {decks.map((d) => (
             <option key={d.id} value={d.id}>{d.name}</option>
@@ -67,19 +74,23 @@ export default function AddCard() {
           <input
             type="text"
             placeholder="New deck name (optional, defaults to Manual)"
+            aria-label="New deck name"
             value={deckName}
             onChange={(e) => setDeckName(e.target.value)}
           />
         )}
         <input
+          ref={frontInputRef}
           type="text"
           placeholder="Front"
+          aria-label="Card front"
           value={front}
           onChange={(e) => setFront(e.target.value)}
         />
         <input
           type="text"
           placeholder="Back"
+          aria-label="Card back"
           value={back}
           onChange={(e) => setBack(e.target.value)}
         />

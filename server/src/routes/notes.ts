@@ -12,59 +12,75 @@ const MAX_DECK_NAME_LENGTH = 200;
 // analysis) — it's a plain front/back card, same shape as an apkg "basic"
 // card, so there's nothing here that needs gating under the JP-analysis
 // invariant.
-notesRouter.post("/", (req, res) => {
-  const { deckId, deckName, front, back, tags } = req.body ?? {};
-  if (typeof front !== "string" || !front.trim()) {
-    return res.status(400).json({ data: null, error: "front is required" });
-  }
-  if (typeof back !== "string" || !back.trim()) {
-    return res.status(400).json({ data: null, error: "back is required" });
-  }
-  if (front.length > MAX_FIELD_LENGTH || back.length > MAX_FIELD_LENGTH) {
-    return res.status(400).json({ data: null, error: `front/back must be under ${MAX_FIELD_LENGTH} characters` });
-  }
-
-  let resolvedDeckId: number;
-  if (deckId !== undefined) {
-    if (!Number.isInteger(deckId) || deckId <= 0) {
-      return res.status(400).json({ data: null, error: "Invalid deckId" });
+notesRouter.post("/", (req, res, next) => {
+  try {
+    const { deckId, deckName, front, back, tags } = req.body ?? {};
+    if (typeof front !== "string" || !front.trim()) {
+      return res.status(400).json({ data: null, error: "front is required" });
     }
-    const deck = db.prepare("SELECT id FROM decks WHERE id = ?").get(deckId);
-    if (!deck) return res.status(404).json({ data: null, error: "Deck not found" });
-    resolvedDeckId = deckId;
-  } else {
-    const trimmed = typeof deckName === "string" ? deckName.trim() : "";
-    const name = (trimmed || "Manual").slice(0, MAX_DECK_NAME_LENGTH);
-    resolvedDeckId = Number(db.prepare("INSERT INTO decks (name) VALUES (?)").run(name).lastInsertRowid);
+    if (typeof back !== "string" || !back.trim()) {
+      return res.status(400).json({ data: null, error: "back is required" });
+    }
+    if (front.length > MAX_FIELD_LENGTH || back.length > MAX_FIELD_LENGTH) {
+      return res.status(400).json({ data: null, error: `front/back must be under ${MAX_FIELD_LENGTH} characters` });
+    }
+
+    if (deckId !== undefined) {
+      if (!Number.isInteger(deckId) || deckId <= 0) {
+        return res.status(400).json({ data: null, error: "Invalid deckId" });
+      }
+      const deck = db.prepare("SELECT id FROM decks WHERE id = ?").get(deckId);
+      if (!deck) return res.status(404).json({ data: null, error: "Deck not found" });
+    }
+
+    const frontTrimmed = front.trim();
+    const backTrimmed = back.trim();
+
+    // Deck creation, note insert, and card insert must all succeed together —
+    // otherwise a failure between steps (e.g. disk full) could leave a note
+    // with no card, or a freshly created empty deck behind.
+    const createNote = db.transaction(() => {
+      let resolvedDeckId: number;
+      if (deckId !== undefined) {
+        resolvedDeckId = deckId;
+      } else {
+        const trimmed = typeof deckName === "string" ? deckName.trim() : "";
+        const name = (trimmed || "Manual").slice(0, MAX_DECK_NAME_LENGTH);
+        resolvedDeckId = Number(db.prepare("INSERT INTO decks (name) VALUES (?)").run(name).lastInsertRowid);
+      }
+
+      const noteId = Number(
+        db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', ?, ?)")
+          .run(
+            resolvedDeckId,
+            JSON.stringify({ Front: frontTrimmed, Back: backTrimmed }),
+            typeof tags === "string" ? tags : ""
+          ).lastInsertRowid
+      );
+
+      const d = newCardDefaults();
+      const cardId = Number(
+        db.prepare(`
+          INSERT INTO cards (note_id, deck_id, card_type, question, answer,
+            due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state)
+          VALUES (?, ?, 'basic', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          noteId,
+          resolvedDeckId,
+          JSON.stringify({ text: frontTrimmed }),
+          JSON.stringify({ text: backTrimmed }),
+          d.due, d.stability, d.difficulty, d.elapsed_days, d.scheduled_days, d.reps, d.lapses, d.state
+        ).lastInsertRowid
+      );
+
+      return { noteId, cardId, deckId: resolvedDeckId };
+    });
+
+    const result = createNote();
+    res.status(201).json({ data: result, error: null });
+  } catch (err) {
+    next(err);
   }
-
-  const frontTrimmed = front.trim();
-  const backTrimmed = back.trim();
-  const noteId = Number(
-    db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', ?, ?)")
-      .run(
-        resolvedDeckId,
-        JSON.stringify({ Front: frontTrimmed, Back: backTrimmed }),
-        typeof tags === "string" ? tags : ""
-      ).lastInsertRowid
-  );
-
-  const d = newCardDefaults();
-  const cardId = Number(
-    db.prepare(`
-      INSERT INTO cards (note_id, deck_id, card_type, question, answer,
-        due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state)
-      VALUES (?, ?, 'basic', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      noteId,
-      resolvedDeckId,
-      JSON.stringify({ text: frontTrimmed }),
-      JSON.stringify({ text: backTrimmed }),
-      d.due, d.stability, d.difficulty, d.elapsed_days, d.scheduled_days, d.reps, d.lapses, d.state
-    ).lastInsertRowid
-  );
-
-  res.status(201).json({ data: { noteId, cardId, deckId: resolvedDeckId }, error: null });
 });
 
 // The persisted linguistic analysis behind a note's cards: every reading

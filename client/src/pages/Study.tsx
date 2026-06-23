@@ -20,17 +20,30 @@ export default function Study() {
   const [reviewed, setReviewed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  const load = () => {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
+    setReviewed(0);
     fetchQueue(deckId, 30)
-      .then(setQueue)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(load, [deckId]);
+      .then((data) => {
+        if (cancelled) return;
+        setQueue(data);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setError(err.message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deckId, reloadToken]);
 
   const handleRate = async (rating: 1 | 2 | 3 | 4) => {
     const [current, ...rest] = queue;
@@ -67,7 +80,7 @@ export default function Study() {
           </Link>
         </div>
         <ErrorMessage message={error} />
-        <button onClick={load} className="btn-secondary mt-8">Retry</button>
+        <button onClick={() => setReloadToken((n) => n + 1)} className="btn-secondary mt-8">Retry</button>
       </motion.div>
     );
   }

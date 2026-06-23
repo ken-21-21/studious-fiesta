@@ -15,20 +15,41 @@ export default function Decks() {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  const load = () => {
+  // Repeated Retry clicks (or a delete completing while a previous load is
+  // still in flight) could otherwise let an older, slower response land
+  // after a newer one and clobber it with stale data.
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
     fetchDecks()
-      .then(setDecks)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
-  };
+      .then((data) => {
+        if (cancelled) return;
+        setDecks(data);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setError(err.message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken]);
 
-  useEffect(load, []);
+  const load = () => setReloadToken((n) => n + 1);
 
   const handleDelete = (id: number) => {
+    // Stable id keyed on the deck: repeat clicks on the same Delete button
+    // (e.g. double-click) update the existing confirm toast in place
+    // instead of stacking duplicate confirmations.
     toast("Delete this deck and all its cards?", {
+      id: `delete-deck-${id}`,
       action: {
         label: "Delete",
         onClick: async () => {

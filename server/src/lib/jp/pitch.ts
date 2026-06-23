@@ -134,8 +134,14 @@ export async function lookupPitch(base: string, reading: string | null): Promise
   if (!candidates || !candidates.length) return null;
 
   const hira = reading ? kataToHira(reading) : null;
-  const match =
-    (hira ? candidates.find((c) => c.reading === hira) : undefined) ?? candidates[0];
+  // When a reading is supplied but doesn't match any candidate for this
+  // headword, the headword is a homograph and we don't know which entry's
+  // pitch accent actually belongs to the caller's reading — presenting a
+  // different homograph's pattern as if it matched would silently teach the
+  // wrong pitch accent. Only fall back to the first (most common) candidate
+  // when no reading was supplied at all to disambiguate against.
+  const match = hira ? candidates.find((c) => c.reading === hira) : candidates[0];
+  if (!match) return null;
   const morae = splitMorae(match.reading);
   if (!morae.length) return null;
   return buildPattern(match.accents[0], morae);

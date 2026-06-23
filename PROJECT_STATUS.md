@@ -10,7 +10,46 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 128 passing (16 files) · typecheck clean · build clean (server + client)
+- **Tests:** 185 passing (21 files) · typecheck clean · build clean (server + client)
+
+### Parallel build-refinement swarm, round 2 (2026-06-23)
+Same pattern as round 1, run again on the now-merged result: 3 agents in
+isolated worktrees, non-overlapping scopes (`server/src`, `client/src`,
+`server/test`), no commits made by the agents — I applied diffs, resolved
+one incidental overlap, re-ran the full gate suite, and committed.
+- **Server-side:** fixed a real "never silently teach wrong Japanese"
+  violation — `lib/jp/pitch.ts` fell back to `candidates[0]`'s pitch
+  pattern when a supplied reading matched none of a homograph's known
+  readings, silently returning the *wrong* word's pitch accent instead of
+  `null`. Now only falls back when no reading was supplied at all; a
+  genuine mismatch returns `null`. Also: wrapped `POST /api/notes`'s
+  deck/note/card writes in a transaction (previously the only handler with
+  no try/catch and no atomicity across its 3 sequential inserts), and
+  added a `MAX_QUESTION_LENGTH` cap to `routes/qa.ts` (every other
+  free-text field already had one; this one fed straight into FTS5 and the
+  Anthropic prompt with no limit).
+- **Client-side:** fixed a stale-closure bug where any scramble-chip "undo"
+  click removed the *last*-placed word regardless of which chip was
+  clicked; added cancellation guards to `Study.tsx`/`Decks.tsx`'s data-
+  loading effects (rapid deck switching could let a stale response
+  overwrite a newer one); fixed overlapping `Audio` instances on rapid
+  listening-card replay clicks; moved focus to the first rating button on
+  card flip (previously stranded on the now-hidden "Show answer" button);
+  added missing `aria-label`s to several placeholder-only inputs; removed
+  dead CSS rules with no corresponding markup.
+- **Test coverage:** +57 tests (128→185, 16→21 files) covering
+  `lib/segment.ts`, `lib/lang.ts`, `lib/shuffle.ts`, `routes/imports.ts`,
+  `routes/qa.ts`, and expanded `backup.test.ts`. One accompanying source
+  fix, reviewed before merging: `lib/segment.ts`'s section-keyword regexes
+  all ended in `\b`, which is ASCII-only in JS and never matches adjacent
+  to CJK characters — so Japanese-language section headers (会話/単語/文法
+  etc., as opposed to bracketed-English headers) were silently
+  misclassified as generic "content" instead of their real section type.
+  Fixed with a Unicode-aware `(?![\p{L}\p{N}])` lookahead.
+- **Incidental overlap:** the server and test-coverage agents both
+  independently wrote `server/test/qa.route.test.ts` covering different
+  (non-redundant) validation cases — merged by hand into one file keeping
+  every distinct case from both (8 total).
 
 ### Parallel build-refinement swarm (2026-06-23)
 Three agents ran in isolated git worktrees against non-overlapping scopes
