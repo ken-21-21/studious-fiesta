@@ -10,7 +10,7 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 227 passing (25 files) · typecheck clean · build clean (server + client)
+- **Tests:** 228 passing (25 files) · typecheck clean · build clean (server + client)
 
 ### Ingestion robustness hardening — apkg + textbook (2026-06-23)
 Stress-tested both importers against real-world and non-standard inputs. All
@@ -61,6 +61,57 @@ positives. The same patterns existed before this change.
 
 **New test files:** `server/test/apkgImporter.edgecases.test.ts` (9 tests),
 `server/test/jobs.edgecases.test.ts` (8 tests).
+
+### Dogfooding pass: two real interaction bugs found and fixed (2026-06-23)
+Live-tested the merged apkg pipeline end-to-end (real `.apkg` files imported
+through the browser and verified via direct DB queries, not just unit tests
+run in isolation). Found two bugs in the *interaction* between previously,
+individually-tested features — each path was unit-tested alone, but a note
+that hit two paths at once fell through a gap:
+
+- **Issue A — multi-template Japanese notes lost their template structure.**
+  A note that was both (a) Japanese-content (content-sniffed) and (b)
+  multi-template (e.g. "Basic and reversed card", 2 `ords`) was routed
+  through `vocabNote()`'s full card bundle, which always emits a fixed set
+  of cards (vocab/production/listening/pitch) regardless of the source's own
+  template count — so a 2-card reversed note became 4 unrelated cards,
+  discarding the deck author's deliberate Front→Back / Back→Front structure.
+  **Fix:** `analyzeJapaneseRows()` is now template-count-aware. Single-template
+  Japanese notes still get the full `vocabNote()` bundle (unregressed). Notes
+  with >1 template keep the existing template-based basic-card path (so card
+  count/direction matches the source exactly) and instead get analysis-only
+  `note_analyses` rows attached, so the provenance/confidence panel isn't
+  empty even though no vocab-bundle cards were generated.
+- **Issue B — Japanese-content Cloze notes produced zero furigana/analysis.**
+  Cloze notetype notes were unconditionally excluded from the Japanese
+  analysis path (so the Cloze fix and the Japanese-analysis fix didn't
+  conflict with each other), but the exclusion meant Japanese Cloze sentences
+  never got tokenized — no furigana, no reading-confidence gating, no
+  `note_analyses` provenance, even though non-Cloze Japanese notes and
+  non-Japanese Cloze notes both worked correctly on their own.
+  **Fix:** Added `clozeSentenceNote()` to `cardgen.ts` (reuses the same
+  tokenize/furigana/confidence-gating logic as the textbook cloze path,
+  `japaneseSentenceCards`, just with an externally-supplied target span
+  instead of an auto-picked one). `apkgImporter.ts` now runs a parallel
+  `analyzeJapaneseClozeRows()` pre-analysis phase keyed by `(nid, ord)` —
+  Anki's `{{cN::...}}` maps 1:1 to `ord = N-1` — producing a furigana-gated
+  cloze card per blank. A target span that can't be matched back against
+  tokenization (e.g. a cloze boundary splitting a token) falls back to the
+  existing plain-text cloze behavior for that one ord rather than asserting
+  an unverified reading. Non-Japanese Cloze notes are unaffected.
+  Existing Cloze regression tests (`A1`) were updated: Japanese-content cloze
+  questions now show the sentence-level `＿＿＿` blank marker (matching
+  textbook cloze cards) instead of the plain `[...]`/`[hint]` placeholder —
+  this is the intended behavior change, not a regression; the Anki hint text
+  is not carried through since the furigana path gates on tokenized
+  confidence instead.
+- **Test-isolation bug also found and fixed in passing:** the new A8
+  regression test (multi-template Japanese note) looked up its own inserted
+  note by `WHERE source_location = '{"ankiNoteId":1}'` only — since multiple
+  tests in the same file reuse Anki note id `1` against a shared app db, this
+  matched whichever test's note got inserted first in the full suite run,
+  not necessarily its own. Fixed by scoping the lookup to `AND deck_id = ?`
+  (each test's import creates its own unique deck).
 
 ### apkg import: Japanese-content notes routed through analysis/cardgen pipeline (2026-06-23)
 - **Root-cause fix:** `colStmt.get()` in sql.js requires `step()` to be called first;

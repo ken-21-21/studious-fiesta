@@ -11,6 +11,10 @@
  *  A5  Template-based field mapping — qfmt/afmt respected when fields aren't 0/1
  *  A6  Orphaned notes (no cards row) — note still imported with a basic card
  *  A7  HTML-heavy fields — all tags stripped, no raw HTML in card question/answer
+ *  A8  Japanese content in a multi-template (reversed-card) notetype — card
+ *      count/direction tracks the source's 2 templates, not an unrelated
+ *      vocab/production/listening/pitch bundle; Japanese content still gets
+ *      note_analyses rows for provenance.
  */
 
 import { describe, it, expect } from "vitest";
@@ -143,8 +147,12 @@ describe("A1 — Cloze notetype", () => {
       expect(q.text).not.toContain("{{c1::");
       expect(a.text).not.toContain("{{c1::");
 
-      // Question should show a blank placeholder
-      expect(q.text).toContain("[...]");
+      // Question should show a blank placeholder. Japanese-content cloze
+      // notes are routed through the sentence-level furigana cloze path
+      // (cardgen.ts clozeSentenceNote), which uses the same "＿＿＿" blank
+      // marker as textbook cloze cards rather than the plain "[...]"
+      // placeholder used for non-Japanese cloze notes.
+      expect(q.text).toContain("＿＿＿");
 
       // Answer should contain the resolved fill-in ("天気")
       expect(a.text).toContain("天気");
@@ -169,8 +177,10 @@ describe("A1 — Cloze notetype", () => {
       const a = JSON.parse(cards[0].answer) as { text: string };
 
       expect(q.text).not.toContain("{{c1::");
-      // hint should appear in question blank
-      expect(q.text).toContain("[capital]");
+      // Japanese-content cloze notes use the sentence-level furigana cloze
+      // path, which doesn't carry the Anki hint text through (it gates on
+      // tokenized confidence instead) — the blank marker appears in its place.
+      expect(q.text).toContain("＿＿＿");
       // answer should have the fill resolved
       expect(a.text).toContain("東京");
     } finally {
@@ -478,6 +488,96 @@ describe("A7 — HTML-heavy fields", () => {
       expect(q.text).toContain("Bold");
       expect(q.text).toContain("More");
       expect(a.text).toContain("hint here");
+    } finally {
+      fs.unlink(tmp, () => {});
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A8 — Japanese content in a multi-template (reversed-card) notetype
+// ---------------------------------------------------------------------------
+
+describe("A8 — Japanese content in a multi-template notetype", () => {
+  it("generates 2 cards (matching the note's 2 templates), not a Japanese vocab bundle", async () => {
+    // "Basic (and reversed card)"-style model: 2 templates (Front→Back, Back→Front),
+    // generic field names ("Front"/"Back"), but content-sniffing detects Japanese
+    // (学生 contains kanji) and would previously have flagged isJapaneseDeck and
+    // routed through vocabNote(), overriding the note's 2-template structure with
+    // an unrelated 4-card bundle (vocab/production/listening/pitch).
+    const tmp = await buildApkg({
+      models: {
+        "7001": {
+          fields: ["Front", "Back"],
+          type: 0,
+          tmpls: [
+            {
+              name: "Card 1",
+              qfmt: "{{Front}}",
+              afmt: "{{FrontSide}}<hr id=answer>{{Back}}",
+            },
+            {
+              name: "Card 2",
+              qfmt: "{{Back}}",
+              afmt: "{{FrontSide}}<hr id=answer>{{Front}}",
+            },
+          ],
+        },
+      },
+      notes: [{ id: 1, mid: 7001, flds: "学生\x1fstudent", tags: "" }],
+      cards: [
+        { id: 1, nid: 1, ord: 0 },
+        { id: 2, nid: 1, ord: 1 },
+      ],
+    });
+
+    try {
+      const result = await importApkg(tmp, "Reversed Japanese Deck");
+
+      // Card count/direction tracks the source's 2 templates — not an
+      // unrelated multi-card bundle (which would produce 4 cards).
+      expect(result.cardsImported).toBe(2);
+
+      const cards = db
+        .prepare("SELECT card_type, question, answer FROM cards WHERE deck_id = ? ORDER BY id")
+        .all(result.deckId) as { card_type: string; question: string; answer: string }[];
+
+      expect(cards).toHaveLength(2);
+
+      // Both cards must be plain "basic" template cards, not vocab/listening/pitch.
+      for (const c of cards) {
+        expect(c.card_type).toBe("basic");
+      }
+
+      const q0 = JSON.parse(cards[0].question) as { text: string };
+      const a0 = JSON.parse(cards[0].answer) as { text: string };
+      const q1 = JSON.parse(cards[1].question) as { text: string };
+      const a1 = JSON.parse(cards[1].answer) as { text: string };
+
+      // ord 0: Front→Back (学生 → student)
+      expect(q0.text).toBe("学生");
+      expect(a0.text).toBe("student");
+      // ord 1: Back→Front (student → 学生) — reversed direction respected
+      expect(q1.text).toBe("student");
+      expect(a1.text).toBe("学生");
+
+      // Japanese content provenance is still captured: note_analyses rows
+      // exist for the term, even though no vocab/listening/pitch cards
+      // were generated.
+      // Scope by deck_id (unique to this import), not just ankiNoteId, since
+      // other tests in this file also import notes with Anki note id 1 into
+      // the same shared app db.
+      const note = db
+        .prepare("SELECT id FROM notes WHERE source_location = ? AND deck_id = ?")
+        .get(JSON.stringify({ ankiNoteId: 1 }), result.deckId) as { id: number } | undefined;
+      expect(note).toBeDefined();
+
+      const analyses = db
+        .prepare("SELECT surface, kind FROM note_analyses WHERE note_id = ?")
+        .all(note!.id) as { surface: string; kind: string }[];
+
+      expect(analyses.length).toBeGreaterThan(0);
+      expect(analyses.some((a) => a.surface.includes("学生"))).toBe(true);
     } finally {
       fs.unlink(tmp, () => {});
     }

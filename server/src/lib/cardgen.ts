@@ -253,6 +253,94 @@ function pickJpClozeIndex(tokens: AnalyzedToken[]): number | null {
   return null;
 }
 
+/**
+ * Build a single Japanese cloze NoteSpec for an externally-supplied sentence
+ * and target span (e.g. an Anki Cloze note's {{cN::target}} deletion), reusing
+ * the same tokenize/furigana/confidence-gating logic as the textbook cloze
+ * path in japaneseSentenceCards — this is not a parallel implementation, just
+ * a variant entry point where the target is given rather than auto-picked.
+ *
+ * Returns null when the target span can't be matched against any contiguous
+ * run of tokens from the full sentence (e.g. the cloze boundary splits a
+ * token oddly) — callers should fall back to a plain (non-furigana) card
+ * rather than guess.
+ */
+export async function clozeSentenceNote(
+  fullSentence: string,
+  targetSurface: string
+): Promise<NoteSpec | null> {
+  const tokens = await tokenize(fullSentence);
+
+  // Find the contiguous run of tokens whose concatenated surface equals the
+  // target span. Prefer the first occurrence; Anki cloze notes generally have
+  // a unique target span per blank.
+  const surfaces = tokens.map((t) => t.surface);
+  let startIdx = -1;
+  let endIdx = -1; // exclusive
+  for (let i = 0; i < tokens.length; i++) {
+    let acc = "";
+    for (let j = i; j < tokens.length; j++) {
+      acc += surfaces[j];
+      if (acc === targetSurface) {
+        startIdx = i;
+        endIdx = j + 1;
+        break;
+      }
+      if (acc.length > targetSurface.length) break;
+    }
+    if (startIdx >= 0) break;
+  }
+  if (startIdx < 0) return null;
+
+  const targetTokens = tokens.slice(startIdx, endIdx);
+  const isUncertain = targetTokens.some((t) => t.readingDecision.needsReview);
+  const targetReading = isUncertain ? undefined : readingOf(targetTokens);
+  const targetAlternatives = isUncertain
+    ? Array.from(new Set(targetTokens.flatMap((t) => t.readingDecision.alternatives)))
+    : [];
+
+  // Build question furigana by rendering the non-blanked tokens around a
+  // single BLANK marker in place of the whole target run.
+  const before = furiganaOf(tokens.slice(0, startIdx));
+  const after = furiganaOf(tokens.slice(endIdx));
+  const clozeFuri: FuriganaSegment[] = [...before, { text: BLANK }, ...after];
+  const clozeText = tokens
+    .map((t, i) => (i === startIdx ? BLANK : i > startIdx && i < endIdx ? "" : t.surface))
+    .join("");
+
+  const answerFurigana: FuriganaSegment[] | undefined = !isUncertain
+    ? targetTokens.flatMap((t) =>
+        t.furigana ? splitOkurigana(t.surface, t.furigana) : [{ text: t.surface }]
+      )
+    : undefined;
+
+  const analysis: AnalysisRecord[] = [
+    ...readingRecords(tokens),
+    ...grammarRecords(analyzeGrammar(tokens)),
+  ];
+
+  const cards: CardSpec[] = [
+    {
+      cardType: "cloze",
+      question: { text: clozeText, furigana: clozeFuri, lang: "ja" },
+      answer: {
+        text: targetSurface,
+        furigana: answerFurigana,
+        reading: targetReading,
+        readingUncertain: isUncertain || undefined,
+        readingAlternatives: isUncertain && targetAlternatives.length ? targetAlternatives : undefined,
+      },
+    },
+  ];
+
+  return {
+    fields: { sentence: fullSentence },
+    tags: isUncertain ? "cloze needs_review" : "cloze",
+    cards,
+    analysis,
+  };
+}
+
 async function japaneseSentenceCards(
   sentence: string,
   type: SectionType

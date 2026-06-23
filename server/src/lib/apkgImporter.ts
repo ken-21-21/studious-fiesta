@@ -5,7 +5,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { db, MEDIA_DIR } from "../db/index.js";
 import { newCardDefaults } from "./fsrs.js";
-import { vocabNote, type NoteSpec } from "./cardgen.js";
+import { vocabNote, clozeSentenceNote, type NoteSpec } from "./cardgen.js";
+import { tokenize } from "./jp/tokenizer.js";
+import { readingRecords, type AnalysisRecord } from "./jp/analysisRecord.js";
 
 // Caps on *uncompressed* size, checked against zip header metadata before any
 // entry is decompressed — multer's upload limit only bounds the compressed
@@ -45,6 +47,19 @@ function clozeToQuestion(text: string): string {
     /\{\{c\d+::(?:[^:}]+)(?:::([^}]*))?\}\}/g,
     (_: string, hint: string | undefined) => (hint ? `[${hint}]` : "[...]")
   );
+}
+
+// Parse every {{cN::answer}} / {{cN::answer::hint}} span out of a cloze field,
+// keyed by its cN index — a single note can carry multiple distinct cN
+// indices (e.g. {{c1::今日}}は{{c2::天気}}がいいですね generates 2 Anki cards,
+// one per ord/cN). Anki's ord is 0-based and corresponds to cN-1.
+function parseClozeSpans(text: string): Map<number, string> {
+  const spans = new Map<number, string>();
+  for (const m of text.matchAll(/\{\{c(\d+)::([^:}]+)(?:::[^}]*)?\}\}/g)) {
+    const n = Number(m[1]);
+    if (!spans.has(n)) spans.set(n, m[2]);
+  }
+  return spans;
 }
 
 // Return the index of the first Anki field referenced by an Anki template
@@ -378,8 +393,22 @@ export async function importApkg(filePath: string, deckName: string, originalFil
   // The Anki deck's reading field is intentionally NOT passed to vocabNote — it is
   // not treated as ground truth. The kuromoji confidence pipeline runs independently
   // on the term, so uncertain readings are gated the same way textbook imports are.
-  async function analyzeJapaneseRows(chunk: any[]): Promise<Map<number, NoteSpec>> {
-    const results = new Map<number, NoteSpec>();
+  //
+  // Routing is template-count-aware, not just content-aware: a note's generated
+  // card count/direction must track its source template count.
+  //  - Exactly one template (the common dedicated-vocab-notetype case): route
+  //    through vocabNote() for the full enriched card bundle.
+  //  - More than one template (reversed-card, custom multi-card notetypes): the
+  //    deck author's template structure is deliberate. Don't replace it with an
+  //    unrelated bundle — keep the existing template-based basic-card path (so
+  //    card count/direction matches the source) and instead attach analysis-only
+  //    records (note_analyses rows) for the Japanese content found, so the
+  //    analysis/provenance panel isn't empty.
+  async function analyzeJapaneseRows(
+    chunk: any[]
+  ): Promise<{ specs: Map<number, NoteSpec>; analysisOnly: Map<number, AnalysisRecord[]> }> {
+    const specs = new Map<number, NoteSpec>();
+    const analysisOnly = new Map<number, AnalysisRecord[]>();
     for (const row of chunk) {
       const [nid, mid, flds] = row as [number, number, string];
       const mapping = modelFieldMap.get(String(mid));
@@ -390,19 +419,79 @@ export async function importApkg(filePath: string, deckName: string, originalFil
       const term = stripTags(parts[mapping.japaneseIdx] ?? "");
       if (!term) continue;
       const gloss = mapping.meaningIdx >= 0 ? stripTags(parts[mapping.meaningIdx] ?? "") : "";
-      try {
-        const spec = await vocabNote({ term, gloss });
-        results.set(nid, spec);
-      } catch {
-        // Analysis failure: this row falls back to basic card in persistChunk
+
+      const templateCount = (modelTemplates.get(String(mid)) ?? []).length;
+      const isMultiTemplate = templateCount > 1;
+
+      if (!isMultiTemplate) {
+        try {
+          const spec = await vocabNote({ term, gloss });
+          specs.set(nid, spec);
+        } catch {
+          // Analysis failure: this row falls back to basic card in persistChunk
+        }
+        continue;
       }
+
+      // Multi-template note: respect the source's per-ord template structure
+      // (handled by persistChunk's non-Japanese branch) but still surface
+      // Japanese-content provenance by analyzing the resolved term text.
+      try {
+        const tokens = await tokenize(term);
+        const records = readingRecords(tokens);
+        if (records.length) analysisOnly.set(nid, records);
+      } catch {
+        // Analysis failure: note still gets its template-based basic cards,
+        // just without note_analyses rows.
+      }
+    }
+    return { specs, analysisOnly };
+  }
+
+  // Pre-analysis phase for Japanese-content Cloze notes: one NoteSpec per
+  // (nid, cN) pair, reusing the same sentence-level tokenize/furigana path
+  // the textbook pipeline uses for cloze cards (cardgen.ts clozeSentenceNote).
+  // Anki's ord is 0-based and corresponds to cN-1, so ord 0 → {{c1::...}},
+  // ord 1 → {{c2::...}}, etc.  A null entry means the target span couldn't be
+  // matched against tokenization — caller falls back to the plain-text cloze
+  // behavior for that ord rather than asserting an unverified reading.
+  async function analyzeJapaneseClozeRows(
+    chunk: any[]
+  ): Promise<Map<number, Map<number, NoteSpec | null>>> {
+    const results = new Map<number, Map<number, NoteSpec | null>>();
+    for (const row of chunk) {
+      const [nid, mid, flds] = row as [number, number, string];
+      const mapping = modelFieldMap.get(String(mid));
+      if (!mapping?.isJapaneseDeck || !modelClozeSet.has(String(mid))) continue;
+      const parts = flds.split("\x1f");
+      const rawText = stripTags(parts[0] ?? "");
+      if (!rawText) continue;
+      const spans = parseClozeSpans(rawText);
+      if (spans.size === 0) continue;
+      const fullSentence = stripCloze(rawText);
+
+      const perOrd = new Map<number, NoteSpec | null>();
+      for (const [n, target] of spans) {
+        const ord = n - 1;
+        try {
+          perOrd.set(ord, await clozeSentenceNote(fullSentence, target));
+        } catch {
+          perOrd.set(ord, null);
+        }
+      }
+      results.set(nid, perOrd);
     }
     return results;
   }
 
   // Persist phase: synchronous DB transaction using pre-computed analysis.
   const persistChunk = db.transaction(
-    (chunk: any[], preAnalyzed: Map<number, NoteSpec>) => {
+    (
+      chunk: any[],
+      preAnalyzed: Map<number, NoteSpec>,
+      analysisOnly: Map<number, AnalysisRecord[]>,
+      preAnalyzedCloze: Map<number, Map<number, NoteSpec | null>>
+    ) => {
       let chunkImported = 0;
       for (const row of chunk) {
         const [nid, mid, flds, tags] = row as [number, number, string, string];
@@ -497,6 +586,9 @@ export async function importApkg(filePath: string, deckName: string, originalFil
 
           const isCloze = modelClozeSet.has(String(mid));
           const templates = modelTemplates.get(String(mid));
+          // Per-ord Japanese cloze NoteSpecs (null = couldn't tokenize cleanly,
+          // falls back to plain cloze behavior for that ord).
+          const jpClozeSpecs = isCloze ? preAnalyzedCloze.get(nid) : undefined;
 
           const fields: any = {
             Front: stripTags(isCloze ? stripCloze(front) : front),
@@ -510,19 +602,90 @@ export async function importApkg(filePath: string, deckName: string, originalFil
             if (mapping.meaningIdx >= 0) fields.meaning = stripTags(parts[mapping.meaningIdx] ?? "");
           }
 
+          // When any ord of a Japanese cloze note resolved to a confident
+          // NoteSpec, tag the note consistently with the textbook cloze path.
+          let noteTags = tags ?? "";
+          if (jpClozeSpecs) {
+            const anySpec = [...jpClozeSpecs.values()].find((s): s is NoteSpec => s !== null);
+            if (anySpec) noteTags = noteTags ? `${noteTags} ${anySpec.tags}` : anySpec.tags;
+          }
+
           const noteRes = insertNote.run(
             noteDeckId,
             sourceId,
             JSON.stringify({ ankiNoteId: nid }),
             JSON.stringify(fields),
-            tags ?? ""
+            noteTags
           );
           const noteId = Number(noteRes.lastInsertRowid);
+
+          // Multi-template Japanese notes don't get the vocabNote() card bundle
+          // (that would override the deck author's template structure), but the
+          // analysis pipeline still ran against the resolved term — persist its
+          // note_analyses rows so the analysis/provenance panel isn't empty.
+          const records = analysisOnly.get(nid);
+          if (records) {
+            for (const a of records) {
+              insertAnalysis.run(
+                noteId, a.kind, a.surface, a.label,
+                a.spanStart, a.spanEnd, a.confidence, a.band,
+                a.needsReview ? 1 : 0,
+                a.analyzerName, a.analyzerVersion,
+                JSON.stringify(a.evidence),
+                JSON.stringify(a.alternatives),
+                JSON.stringify(a.payload)
+              );
+            }
+          }
+
+          // note_analyses provenance for Japanese cloze notes: written once per
+          // note (not once per ord) — every ord re-tokenizes the same underlying
+          // sentence, so the analysis records are identical across ords and
+          // would otherwise be duplicated.
+          if (jpClozeSpecs) {
+            const firstSpec = [...jpClozeSpecs.values()].find((s): s is NoteSpec => s !== null);
+            for (const a of firstSpec?.analysis ?? []) {
+              insertAnalysis.run(
+                noteId, a.kind, a.surface, a.label,
+                a.spanStart, a.spanEnd, a.confidence, a.band,
+                a.needsReview ? 1 : 0,
+                a.analyzerName, a.analyzerVersion,
+                JSON.stringify(a.evidence),
+                JSON.stringify(a.alternatives),
+                JSON.stringify(a.payload)
+              );
+            }
+          }
 
           const ords = cardOrdsByNid.get(nid) ?? [0];
           for (const ord of ords) {
             const defaults = newCardDefaults();
             const media = { image: images[0], audio: audio[0] };
+
+            const jpSpec = jpClozeSpecs?.get(ord);
+            if (jpSpec) {
+              // Japanese-content cloze note: sentence-level furigana/reading
+              // gated cloze card, matching the textbook cloze shape exactly.
+              const card = jpSpec.cards[0];
+              insertCard.run(
+                noteId,
+                noteDeckId,
+                card.cardType,
+                JSON.stringify(card.question),
+                JSON.stringify(card.answer),
+                JSON.stringify({ ...media, ...(card.media ?? {}) }),
+                defaults.due,
+                defaults.stability,
+                defaults.difficulty,
+                defaults.elapsed_days,
+                defaults.scheduled_days,
+                defaults.reps,
+                defaults.lapses,
+                defaults.state
+              );
+              chunkImported++;
+              continue;
+            }
 
             let questionText: string;
             let answerText: string;
@@ -580,16 +743,18 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     while (notesStmt.step()) {
       chunk.push(notesStmt.get());
       if (chunk.length >= CHUNK_SIZE) {
-        const preAnalyzed = await analyzeJapaneseRows(chunk);
-        imported += persistChunk(chunk, preAnalyzed);
+        const { specs, analysisOnly } = await analyzeJapaneseRows(chunk);
+        const preAnalyzedCloze = await analyzeJapaneseClozeRows(chunk);
+        imported += persistChunk(chunk, specs, analysisOnly, preAnalyzedCloze);
         chunk = [];
         // Yield to event loop
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }
     if (chunk.length > 0) {
-      const preAnalyzed = await analyzeJapaneseRows(chunk);
-      imported += persistChunk(chunk, preAnalyzed);
+      const { specs, analysisOnly } = await analyzeJapaneseRows(chunk);
+      const preAnalyzedCloze = await analyzeJapaneseClozeRows(chunk);
+      imported += persistChunk(chunk, specs, analysisOnly, preAnalyzedCloze);
     }
     notesStmt.free();
   } finally {
