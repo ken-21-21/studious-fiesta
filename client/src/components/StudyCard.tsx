@@ -14,6 +14,7 @@ import "./CardTypes.css";
 interface Props {
   card: StudyCard;
   onRate: (rating: 1 | 2 | 3 | 4) => void;
+  ratingDisabled?: boolean;
 }
 
 // Renders kanji with readings as <ruby>/<rt>, flagging segments whose reading
@@ -168,7 +169,7 @@ function AnalysisPanel({
 
   return (
     <div className="analysis-panel">
-      <button className="analysis-toggle" onClick={toggle}>
+      <button className="analysis-toggle" onClick={toggle} aria-expanded={open}>
         {open ? "Hide Details" : "Show Analysis & Provenance"}
       </button>
       {open && (
@@ -228,13 +229,13 @@ function AnalysisPanel({
   );
 }
 
-function RatingRow({ onRate }: { onRate: Props["onRate"] }) {
+function RatingRow({ onRate, disabled }: { onRate: Props["onRate"]; disabled?: boolean }) {
   return (
     <div className="rating-row">
-      <button className="rating-btn rating-again" onClick={() => onRate(1)}>Again</button>
-      <button className="rating-btn rating-hard" onClick={() => onRate(2)}>Hard</button>
-      <button className="rating-btn rating-good" onClick={() => onRate(3)}>Good</button>
-      <button className="rating-btn rating-easy" onClick={() => onRate(4)}>Easy</button>
+      <button className="rating-btn rating-again" onClick={() => onRate(1)} disabled={disabled}>Again</button>
+      <button className="rating-btn rating-hard" onClick={() => onRate(2)} disabled={disabled}>Hard</button>
+      <button className="rating-btn rating-good" onClick={() => onRate(3)} disabled={disabled}>Good</button>
+      <button className="rating-btn rating-easy" onClick={() => onRate(4)} disabled={disabled}>Easy</button>
     </div>
   );
 }
@@ -249,7 +250,7 @@ function Media({ media }: { media: StudyCard["media"] }) {
   );
 }
 
-function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "basic" }>; onRate: Props["onRate"] }) {
+function BasicCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, { card_type: "basic" }>; onRate: Props["onRate"]; ratingDisabled?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   return (
     <motion.div 
@@ -269,7 +270,7 @@ function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "ba
         <Media media={card.media} />
         <div className="card-prompt">{card.question.text}</div>
         <div className="card-answer">{card.answer.text}</div>
-        <RatingRow onRate={onRate} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
@@ -283,7 +284,7 @@ function BasicCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "ba
 // on screen forever for JP cloze cards.
 const CLOZE_BLANK_RE = /_____|＿＿＿/;
 
-function ClozeCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "cloze" }>; onRate: Props["onRate"] }) {
+function ClozeCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, { card_type: "cloze" }>; onRate: Props["onRate"]; ratingDisabled?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   const display = revealed
     ? card.question.text.replace(CLOZE_BLANK_RE, `[${card.answer.text}]`)
@@ -305,14 +306,14 @@ function ClozeCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "cl
       <div className="flip-card-back card-surface">
         <Media media={card.media} />
         <div className="card-prompt">{display}</div>
-        <RatingRow onRate={onRate} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
   );
 }
 
-function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "listening" }>; onRate: Props["onRate"] }) {
+function ListeningCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, { card_type: "listening" }>; onRate: Props["onRate"]; ratingDisabled?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   const [typed, setTyped] = useState("");
   const audioUrl = card.media?.audio ? `/media/${card.media.audio}` : null;
@@ -354,18 +355,18 @@ function ListeningCard({ card, onRate }: { card: Extract<StudyCard, { card_type:
         <button className="listen-btn" onClick={playAudio} aria-label="Play audio">
           🔊
         </button>
-        {typed && <div className="card-prompt" style={{ fontSize: '1.25rem', opacity: 0.8 }}>You typed: {typed}</div>}
+        {typed && <div className="card-prompt typed-recap">You typed: {typed}</div>}
         <div className="card-answer">
           {card.answer.furigana ? <Furigana segments={card.answer.furigana} /> : card.answer.text}
         </div>
-        <RatingRow onRate={onRate} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
   );
 }
 
-function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "scramble" }>; onRate: Props["onRate"] }) {
+function ScrambleCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, { card_type: "scramble" }>; onRate: Props["onRate"]; ratingDisabled?: boolean }) {
   const [placedIdx, setPlacedIdx] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
   const words: string[] = card.question.words;
@@ -391,21 +392,47 @@ function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: 
         <div className="card-prompt">Put the sentence in order</div>
         <div className="scramble-answer-row">
           {placedIdx.map((i) => (
-            <span key={i} className="scramble-chip" onClick={undo}>
+            <span
+              key={i}
+              className="scramble-chip"
+              role="button"
+              tabIndex={0}
+              aria-label={`Remove "${words[i]}" from sentence`}
+              onClick={undo}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  undo();
+                }
+              }}
+            >
               {words[i]}
             </span>
           ))}
         </div>
         <div className="scramble-row">
-          {words.map((w, i) => (
-            <span
-              key={i}
-              className={`scramble-chip ${placedIdx.includes(i) ? "placed" : ""}`}
-              onClick={() => pick(i)}
-            >
-              {w}
-            </span>
-          ))}
+          {words.map((w, i) => {
+            const placed = placedIdx.includes(i);
+            return (
+              <span
+                key={i}
+                className={`scramble-chip ${placed ? "placed" : ""}`}
+                role="button"
+                tabIndex={placed ? -1 : 0}
+                aria-disabled={placed}
+                aria-label={placed ? `${w} (already placed)` : `Add "${w}" to sentence`}
+                onClick={() => pick(i)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    pick(i);
+                  }
+                }}
+              >
+                {w}
+              </span>
+            );
+          })}
         </div>
         <button className="text-input" onClick={() => setRevealed(true)}>
           Check
@@ -417,14 +444,14 @@ function ScrambleCard({ card, onRate }: { card: Extract<StudyCard, { card_type: 
           {isCorrect ? "Correct! " : "Correct order: "}
           {correct.join(" ")}
         </div>
-        <RatingRow onRate={onRate} />
+        <RatingRow onRate={onRate} disabled={ratingDisabled} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
     </motion.div>
   );
 }
 
-function VocabCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "vocab" }>; onRate: Props["onRate"] }) {
+function VocabCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, { card_type: "vocab" }>; onRate: Props["onRate"]; ratingDisabled?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   return (
     <div className="card-surface">
@@ -444,7 +471,7 @@ function VocabCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "vo
         </button>
       ) : (
         <>
-          <RatingRow onRate={onRate} />
+          <RatingRow onRate={onRate} disabled={ratingDisabled} />
           <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
@@ -452,7 +479,7 @@ function VocabCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "vo
   );
 }
 
-function PitchCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "pitch" }>; onRate: Props["onRate"] }) {
+function PitchCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, { card_type: "pitch" }>; onRate: Props["onRate"]; ratingDisabled?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   return (
     <div className="card-surface">
@@ -467,7 +494,7 @@ function PitchCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "pi
         </button>
       ) : (
         <>
-          <RatingRow onRate={onRate} />
+          <RatingRow onRate={onRate} disabled={ratingDisabled} />
           <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
         </>
       )}
@@ -475,20 +502,20 @@ function PitchCard({ card, onRate }: { card: Extract<StudyCard, { card_type: "pi
   );
 }
 
-export default function StudyCardView({ card, onRate }: Props) {
+export default function StudyCardView({ card, onRate, ratingDisabled }: Props) {
   switch (card.card_type) {
     case "cloze":
-      return <ClozeCard card={card as Extract<StudyCard, { card_type: "cloze" }>} onRate={onRate} />;
+      return <ClozeCard card={card as Extract<StudyCard, { card_type: "cloze" }>} onRate={onRate} ratingDisabled={ratingDisabled} />;
     case "listening":
-      return <ListeningCard card={card as Extract<StudyCard, { card_type: "listening" }>} onRate={onRate} />;
+      return <ListeningCard card={card as Extract<StudyCard, { card_type: "listening" }>} onRate={onRate} ratingDisabled={ratingDisabled} />;
     case "scramble":
-      return <ScrambleCard card={card as Extract<StudyCard, { card_type: "scramble" }>} onRate={onRate} />;
+      return <ScrambleCard card={card as Extract<StudyCard, { card_type: "scramble" }>} onRate={onRate} ratingDisabled={ratingDisabled} />;
     case "vocab":
-      return <VocabCard card={card as Extract<StudyCard, { card_type: "vocab" }>} onRate={onRate} />;
+      return <VocabCard card={card as Extract<StudyCard, { card_type: "vocab" }>} onRate={onRate} ratingDisabled={ratingDisabled} />;
     case "pitch":
-      return <PitchCard card={card as Extract<StudyCard, { card_type: "pitch" }>} onRate={onRate} />;
+      return <PitchCard card={card as Extract<StudyCard, { card_type: "pitch" }>} onRate={onRate} ratingDisabled={ratingDisabled} />;
     case "basic":
     default:
-      return <BasicCard card={card as Extract<StudyCard, { card_type: "basic" }>} onRate={onRate} />;
+      return <BasicCard card={card as Extract<StudyCard, { card_type: "basic" }>} onRate={onRate} ratingDisabled={ratingDisabled} />;
   }
 }

@@ -17,7 +17,7 @@ backupRouter.get("/", async (_req, res) => {
   // resolved path is still confined to the temp dir before touching the
   // filesystem, in case that ever changes.
   if (tmpPath !== tmpDir && !tmpPath.startsWith(tmpDir + path.sep)) {
-    return res.status(500).json({ error: "Failed to create backup" });
+    return res.status(500).json({ data: null, error: "Failed to create backup" });
   }
   try {
     await db.backup(tmpPath);
@@ -25,12 +25,12 @@ backupRouter.get("/", async (_req, res) => {
     res.download(tmpPath, `studious-fiesta-backup-${stamp}.db`, (err) => {
       fs.unlink(tmpPath, () => {});
       if (err && !res.headersSent) {
-        res.status(500).json({ error: "Backup download failed" });
+        res.status(500).json({ data: null, error: "Backup download failed" });
       }
     });
   } catch (err) {
     fs.unlink(tmpPath, () => {});
-    res.status(500).json({ error: "Failed to create backup" });
+    res.status(500).json({ data: null, error: "Failed to create backup" });
   }
 });
 
@@ -45,5 +45,5 @@ backupRouter.get("/info", (_req, res) => {
   } catch {
     mediaFileCount = 0;
   }
-  res.json({ dataDir: DATA_DIR, mediaDir, mediaFileCount });
+  res.json({ data: { dataDir: DATA_DIR, mediaDir, mediaFileCount }, error: null });
 });

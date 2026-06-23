@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { addCorrection, reGateExistingAnalyses } from "../src/lib/corrections.js";
+import { addCorrection, reGateExistingAnalyses, getReadingCorrection } from "../src/lib/corrections.js";
 import { disambiguateReading } from "../src/lib/jp/readings.js";
 import { db } from "../src/db/index.js";
 
@@ -320,5 +320,165 @@ describe("re-gating existing analyses and cards on correction", () => {
     const rowB = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteB) as any;
     expect(rowA.label).toBe("あく");
     expect(rowB.label).toBe("ひらく"); // untouched: different source
+  });
+
+  it("back-applies a matching-scoped correction globally, same as 'global' (matching has no extra context to filter on for existing rows)", () => {
+    const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Deck Matching')").run().lastInsertRowid);
+    const noteA = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+        .run(deckId).lastInsertRowid
+    );
+    const noteB = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+        .run(deckId).lastInsertRowid
+    );
+    for (const noteId of [noteA, noteB]) {
+      db.prepare(`
+        INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+        VALUES (?, 'reading', '今日', 'きょう', 0.4, 'low', 1, '[]', '[]', '{}')
+      `).run(noteId);
+    }
+
+    const { analysesUpdated, affectedNoteIds } = reGateExistingAnalyses({
+      kind: "reading",
+      surface: "今日",
+      value: "こんにち",
+      scope: "matching",
+    });
+
+    expect(analysesUpdated).toBe(2);
+    expect(affectedNoteIds.sort()).toEqual([noteA, noteB].sort());
+    const rowA = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteA) as any;
+    const rowB = db.prepare("SELECT label FROM note_analyses WHERE note_id = ?").get(noteB) as any;
+    expect(rowA.label).toBe("こんにち");
+    expect(rowB.label).toBe("こんにち");
+  });
+
+  it("does not back-apply corrections of a kind other than reading/grammar (e.g. pitch)", () => {
+    const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Deck Pitch Kind')").run().lastInsertRowid);
+    const noteId = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+        .run(deckId).lastInsertRowid
+    );
+    db.prepare(`
+      INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+      VALUES (?, 'reading', '橋', 'はし', 0.4, 'low', 1, '[]', '[]', '{}')
+    `).run(noteId);
+
+    const { analysesUpdated, cardsUpdated, affectedNoteIds } = reGateExistingAnalyses({
+      kind: "pitch",
+      surface: "橋",
+      value: "2",
+      scope: "global",
+    });
+
+    expect(analysesUpdated).toBe(0);
+    expect(cardsUpdated).toBe(0);
+    expect(affectedNoteIds).toEqual([]);
+  });
+
+  it("does not back-apply when no surface is given", () => {
+    const { analysesUpdated, cardsUpdated } = reGateExistingAnalyses({
+      kind: "reading",
+      value: "なまもの",
+      scope: "global",
+    });
+    expect(analysesUpdated).toBe(0);
+    expect(cardsUpdated).toBe(0);
+  });
+
+  it("skips rows whose label already equals the corrected value (no-op, not an update)", () => {
+    const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Deck Noop')").run().lastInsertRowid);
+    const noteId = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, fields, tags) VALUES (?, 'manual', '{}', '')")
+        .run(deckId).lastInsertRowid
+    );
+    db.prepare(`
+      INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+      VALUES (?, 'reading', '雨', 'あめ', 0.9, 'high', 0, '[]', '[]', '{}')
+    `).run(noteId);
+
+    const { analysesUpdated, affectedNoteIds } = reGateExistingAnalyses({
+      kind: "reading",
+      surface: "雨",
+      value: "あめ",
+      scope: "global",
+    });
+
+    expect(analysesUpdated).toBe(0);
+    expect(affectedNoteIds).toEqual([]);
+  });
+});
+
+describe("getReadingCorrection scope precedence", () => {
+  it("returns null when no correction exists for the surface", () => {
+    expect(getReadingCorrection("存在しない表現")).toBeNull();
+  });
+
+  it("prefers a more specific (source) scope over a global one for the same surface", () => {
+    addCorrection({ kind: "reading", surface: "面白い", value: "おもしろい", scope: "global" });
+    addCorrection({
+      kind: "reading",
+      surface: "面白い",
+      value: "おもろい",
+      scope: "source",
+      context: "src:7",
+    });
+
+    // Matching context for the source-scoped correction → the more specific one wins.
+    const withContext = getReadingCorrection("面白い", "src:7");
+    expect(withContext?.value).toBe("おもろい");
+    expect(withContext?.scope).toBe("source");
+
+    // No matching context → only the global correction is eligible.
+    const withoutContext = getReadingCorrection("面白い", "src:99");
+    expect(withoutContext?.value).toBe("おもしろい");
+    expect(withoutContext?.scope).toBe("global");
+  });
+
+  it("a 'matching' scoped correction applies regardless of context, like global", () => {
+    addCorrection({ kind: "reading", surface: "嫌い", value: "きらい", scope: "matching" });
+    const result = getReadingCorrection("嫌い", "any-context-at-all");
+    expect(result?.value).toBe("きらい");
+    expect(result?.scope).toBe("matching");
+  });
+
+  it("a scoped (non-global/matching) correction with no context argument is ignored", () => {
+    addCorrection({
+      kind: "reading",
+      surface: "大事",
+      value: "おおごと",
+      scope: "sentence",
+      context: "sent:1",
+    });
+    // Caller passes no context at all → scoped correction can't match.
+    expect(getReadingCorrection("大事")).toBeNull();
+  });
+});
+
+describe("addCorrection validation", () => {
+  it("rejects an invalid correction kind", () => {
+    expect(() => addCorrection({ kind: "bogus" as any, value: "x", scope: "global" })).toThrow(/Invalid correction kind/);
+  });
+
+  it("rejects an invalid correction scope", () => {
+    expect(() => addCorrection({ kind: "reading", value: "x", scope: "bogus" as any })).toThrow(/Invalid correction scope/);
+  });
+
+  it("rejects an empty/whitespace-only value", () => {
+    expect(() => addCorrection({ kind: "reading", value: "   ", scope: "global" })).toThrow(/cannot be empty/);
+  });
+
+  it("defaults scope to 'global' when omitted", () => {
+    const id = addCorrection({ kind: "reading", surface: "雪", value: "ゆき" });
+    const row = db.prepare("SELECT scope FROM corrections WHERE id = ?").get(id) as any;
+    expect(row.scope).toBe("global");
+  });
+
+  it("sanitizes null bytes and trims surrounding whitespace from text fields", () => {
+    const id = addCorrection({ kind: "reading", surface: "  火   ", value: "  ひ  ", scope: "global" });
+    const row = db.prepare("SELECT surface, value FROM corrections WHERE id = ?").get(id) as any;
+    expect(row.surface).toBe("火");
+    expect(row.value).toBe("ひ");
   });
 });

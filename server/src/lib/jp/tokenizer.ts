@@ -45,7 +45,6 @@ function toAnalyzed(t: MorphToken, opts: AnalyzeOptions): AnalyzedToken {
 
   const reading = decision.selected;
   const furigana = t.hasKanji && reading && !decision.needsReview ? reading : null;
-  const morae = t.morae ?? (reading ? null : null);
 
   return {
     surface: t.surface,

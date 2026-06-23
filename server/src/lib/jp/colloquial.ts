@@ -47,11 +47,12 @@ export function canonicalizeSpeech(text: string): ColloquialAnalysis {
 
   for (const rule of RULES) {
     if (rule.re.test(canonical)) {
-      // Record the reduction with the actual matched fragments.
+      // Record the reduction with the actual matched fragment, not the whole string.
       const before = canonical;
+      const match = before.match(rule.re)?.[0] ?? before;
       canonical = canonical.replace(rule.re, rule.to);
       if (canonical !== before) {
-        reductions.push({ label: rule.label, from: text, to: rule.to, note: rule.note });
+        reductions.push({ label: rule.label, from: match, to: rule.to, note: rule.note });
       }
     }
   }

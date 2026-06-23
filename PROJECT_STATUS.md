@@ -10,7 +10,49 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 70 passing (12 files) · typecheck clean · build clean (server + client)
+- **Tests:** 128 passing (16 files) · typecheck clean · build clean (server + client)
+
+### Parallel build-refinement swarm (2026-06-23)
+Three agents ran in isolated git worktrees against non-overlapping scopes
+(`server/src/**`, `client/src/**`, `server/test/**`), each tasked with
+refining the existing build rather than adding features. All three came
+back clean and were merged in directly (no commits made by the agents
+themselves; I applied their diffs, re-ran the full gate suite, and
+committed the result):
+- **Server-side (`server/src/**`):** added missing `cardId`/`sourceId`
+  validation to `routes/qa.ts`; standardized 4 responses in
+  `routes/backup.ts` onto the `{ data, error }` envelope; indentation-only
+  cleanups in `decks.ts`/`study.ts`/`notes.ts`; removed a dead `morae`
+  variable in `lib/jp/tokenizer.ts`; fixed `lib/jp/colloquial.ts` to report
+  the actual matched substring (`before.match(rule.re)?.[0]`) instead of
+  the whole input text in its `from` field.
+- **Client-side (`client/src/**`):** brought `AddCard.tsx` up to the same
+  `pageVariants`/toast pattern already used on Decks/Import/Study; made
+  the scramble-chip controls keyboard-accessible (`role="button"`,
+  `tabIndex`, `onKeyDown`, `aria-label`); added `aria-expanded` to the
+  analysis-toggle disclosure; added a `submitting`/`ratingDisabled`
+  busy-state so rating buttons can't double-fire during an in-flight
+  review POST; added a mobile breakpoint to `CardTypes.css` (previously had
+  none despite Study.tsx being the most interaction-dense page); minor
+  dead-CSS and inline-style cleanup in `index.css`/`Decks.tsx`.
+- **Test coverage (`server/test/**`):** added `fsrs.test.ts`,
+  `study.route.test.ts`, `corrections.route.test.ts`,
+  `decks.sources.route.test.ts`, and expanded `corrections.test.ts` /
+  `notes.manual.test.ts` — net +58 tests (70 → 128, 12 → 16 files).
+  **One source change accompanied the tests, reviewed before merging:**
+  `lib/fsrs.ts`'s `rowToFsrsCard` previously only clamped the FSRS
+  scheduler's *output* (via the existing `bound()`) against NaN/Infinity;
+  a corrupted prior row (bad migration, direct DB edit) could still reach
+  the scheduler raw and produce an unpersistable `due`
+  (`RangeError: Invalid time value`), crashing the review instead of
+  degrading gracefully. Added a `boundInput()` helper applied to the prior
+  row's `stability`/`difficulty`/`elapsed_days`/`scheduled_days`/`due`
+  before they reach `ts-fsrs`, mirroring the existing output-clamping
+  pattern. Covered by new regression tests in `fsrs.test.ts`.
+
+All three diffs applied without conflicts (scopes were genuinely disjoint).
+Full gate suite (`server/`: typecheck, test, build; `client/`: build)
+re-run after merge and confirmed green.
 
 ### Reconciliation note (2026-06-23, ANTILOG → mine, round 4)
 `ANTILOG` had moved 2 more commits (`7de1363` "Apple-Level Polish", `70f8162`

@@ -19,6 +19,7 @@ export default function Study() {
   const [loading, setLoading] = useState(true);
   const [reviewed, setReviewed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -33,13 +34,16 @@ export default function Study() {
 
   const handleRate = async (rating: 1 | 2 | 3 | 4) => {
     const [current, ...rest] = queue;
-    if (!current) return;
+    if (!current || submitting) return;
+    setSubmitting(true);
     try {
       await reviewCard(current.id, rating);
       setQueue(rest);
       setReviewed((n) => n + 1);
     } catch (err: any) {
       toast.error(err.message ?? "Failed to submit review");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -100,7 +104,7 @@ export default function Study() {
           exit={{ opacity: 0, x: -20 }}
           transition={{ duration: 0.2 }}
         >
-          <StudyCardView card={current} onRate={handleRate} />
+          <StudyCardView card={current} onRate={handleRate} ratingDisabled={submitting} />
         </motion.div>
       </AnimatePresence>
     </motion.div>

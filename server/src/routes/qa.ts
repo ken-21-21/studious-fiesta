@@ -11,6 +11,14 @@ qaRouter.post("/", async (req, res, next) => {
       res.status(400).json({ data: null, error: "question is required" });
       return;
     }
+    if (cardId !== undefined && (!Number.isInteger(cardId) || cardId <= 0)) {
+      res.status(400).json({ data: null, error: "cardId must be a positive integer" });
+      return;
+    }
+    if (sourceId !== undefined && (!Number.isInteger(sourceId) || sourceId <= 0)) {
+      res.status(400).json({ data: null, error: "sourceId must be a positive integer" });
+      return;
+    }
 
     let context = "";
 

@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { addNote, fetchDecks, type Deck } from "../lib/api";
+
+const pageVariants = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  exit: { opacity: 0, y: -20, transition: { duration: 0.2 } }
+};
 
 export default function AddCard() {
   const [decks, setDecks] = useState<Deck[]>([]);
@@ -8,7 +16,6 @@ export default function AddCard() {
   const [deckName, setDeckName] = useState("");
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
 
@@ -18,11 +25,10 @@ export default function AddCard() {
 
   const handleAdd = async (keepGoing: boolean) => {
     if (!front.trim() || !back.trim()) {
-      setStatus("Error: front and back are both required.");
+      toast.error("Front and back are both required.");
       return;
     }
     setBusy(true);
-    setStatus(null);
     try {
       const result = await addNote({
         deckId: deckId ? Number(deckId) : undefined,
@@ -36,17 +42,17 @@ export default function AddCard() {
       }
       setFront("");
       setBack("");
-      setStatus("Added.");
+      toast.success("Card added.");
       if (!keepGoing) navigate(`/study?deckId=${result.deckId}`);
     } catch (err: any) {
-      setStatus(`Error: ${err.message}`);
+      toast.error(err.message ?? "Failed to add card");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="glass-panel">
+    <motion.div className="glass-panel" variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <h2>Add a card</h2>
       <p>Quickly add a single front/back card without a full import.</p>
 
@@ -85,8 +91,7 @@ export default function AddCard() {
             {busy ? "Adding…" : "Add & study"}
           </button>
         </div>
-        {status && <p className={status.startsWith("Error") ? "error-text mt-8" : "mt-8"}>{status}</p>}
       </div>
-    </div>
+    </motion.div>
   );
 }

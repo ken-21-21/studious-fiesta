@@ -24,13 +24,26 @@ export interface CardRow {
   last_review: string | null;
 }
 
+// Same clamping rule gradeCard applies to its own output, applied here to
+// the *input* row first. A corrupted prior row (e.g. NaN/Infinity from a bad
+// migration or direct DB edit) would otherwise reach the scheduler raw —
+// ts-fsrs derives `due` from prior stability/elapsed_days internally, before
+// gradeCard's post-hoc bound() ever runs, so an unclamped corrupt prior value
+// can produce an unpersistable `due` (RangeError: Invalid time value) that
+// crashes the whole review instead of degrading gracefully.
+function boundInput(val: number, min: number, max: number, fallback: number): number {
+  if (typeof val !== "number" || !Number.isFinite(val)) return fallback;
+  return Math.max(min, Math.min(max, val));
+}
+
 function rowToFsrsCard(row: CardRow): FsrsCard {
+  const due = new Date(row.due);
   return {
-    due: new Date(row.due),
-    stability: row.stability,
-    difficulty: row.difficulty,
-    elapsed_days: row.elapsed_days,
-    scheduled_days: row.scheduled_days,
+    due: Number.isNaN(due.getTime()) ? new Date() : due,
+    stability: boundInput(row.stability, 0.01, 36500, 0.1),
+    difficulty: boundInput(row.difficulty, 1, 10, 5),
+    elapsed_days: boundInput(row.elapsed_days, 0, 36500, 0),
+    scheduled_days: boundInput(row.scheduled_days, 0, 36500, 0),
     reps: row.reps,
     lapses: row.lapses,
     state: row.state as State,

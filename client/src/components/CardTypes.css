@@ -118,6 +118,12 @@
   border-color: var(--accent);
 }
 
+.scramble-chip:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
 .scramble-chip.placed {
   background: var(--bg-card);
   opacity: 0.4;
@@ -221,7 +227,7 @@ button.text-input:hover {
   box-shadow: var(--shadow-sm);
 }
 
-.rating-btn:hover {
+.rating-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   filter: brightness(1.1);
@@ -411,6 +417,11 @@ button.text-input:hover {
   opacity: 0.8;
 }
 
+.typed-recap {
+  font-size: 1.25rem;
+  opacity: 0.8;
+}
+
 .furigana-line {
   display: inline-flex;
   flex-wrap: wrap;
@@ -497,4 +508,29 @@ rt {
   font-weight: 400;
   transform: translateY(-0.1em);
   color: var(--text);
+}
+
+@media (max-width: 480px) {
+  .card-surface {
+    padding: 1.75rem 1.25rem;
+  }
+
+  .card-prompt {
+    font-size: 1.375rem;
+  }
+
+  .rating-row {
+    gap: 0.4rem;
+  }
+
+  .rating-btn {
+    padding: 0.625rem 0.25rem;
+    font-size: 0.875rem;
+  }
+
+  .listen-btn {
+    width: 3.25rem;
+    height: 3.25rem;
+    font-size: 1.5rem;
+  }
 }

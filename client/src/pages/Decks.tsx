@@ -50,11 +50,11 @@ export default function Decks() {
 
   if (loading) return (
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+      <div className="page-header">
         <h2>Decks</h2>
       </div>
       <SkeletonLoader />
-      <div style={{ marginTop: '16px' }}>
+      <div className="mt-4">
         <SkeletonLoader />
       </div>
     </motion.div>
@@ -62,18 +62,18 @@ export default function Decks() {
 
   return (
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <div className="page-header">
         <h2>Decks</h2>
         <div className="flex gap-2">
-          <a href="/api/backup" className="btn-primary btn-secondary" style={{ textDecoration: 'none' }} download>Download backup</a>
-          <Link to="/import" className="btn-primary" style={{ textDecoration: 'none' }}><button>+ Import</button></Link>
+          <a href="/api/backup" className="btn-secondary" download>Download backup</a>
+          <Link to="/import" className="btn-primary">+ Import</Link>
         </div>
       </div>
-      
+
       {error && (
-        <div style={{ marginBottom: '24px' }}>
+        <div className="mb-6">
           <ErrorMessage message={error} />
-          <button className="btn-secondary" onClick={load} style={{ marginTop: '16px' }}>Retry</button>
+          <button className="btn-secondary mt-4" onClick={load}>Retry</button>
         </div>
       )}
       
