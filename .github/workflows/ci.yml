@@ -8,6 +8,9 @@ on:
       - claude/**
       - ANTILOG
 
+permissions:
+  contents: read
+
 jobs:
   server-gates:
     name: Server gates
