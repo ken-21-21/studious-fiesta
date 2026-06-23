@@ -83,7 +83,7 @@ describe("POST /api/corrections", () => {
   });
 
   it("rejects an invalid scope with 400", async () => {
-    const { status, body } = await post({ kind: "reading", value: "x", scope: "bogus" });
+    const { status, body } = await post({ kind: "reading", value: "あ", scope: "bogus" });
     expect(status).toBe(400);
     expect(body.error).toMatch(/scope/);
   });
@@ -114,5 +114,33 @@ describe("POST /api/corrections", () => {
     });
     expect(status).toBe(400);
     expect(body.error).toMatch(/under 500/);
+  });
+
+  it("rejects non-kana reading corrections", async () => {
+    const { status, body } = await post({
+      kind: "reading",
+      surface: "学校",
+      value: "school",
+    });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/kana/i);
+  });
+
+  it("normalizes control characters from input fields before persistence", async () => {
+    const { status, body } = await post({
+      kind: "grammar",
+      surface: "  丁寧語\t\n",
+      context: "  lesson-1\u0007 ",
+      value: "  polite form\t ",
+      note: "\u0000 keep this note \n",
+    });
+    expect(status).toBe(201);
+    const row = db
+      .prepare("SELECT surface, context, value, note FROM corrections WHERE id = ?")
+      .get(body.data.id) as any;
+    expect(row.surface).toBe("丁寧語");
+    expect(row.context).toBe("lesson-1");
+    expect(row.value).toBe("polite form");
+    expect(row.note).toBe("keep this note");
   });
 });

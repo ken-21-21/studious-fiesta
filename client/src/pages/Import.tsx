@@ -71,6 +71,9 @@ export default function Import() {
     <motion.div className="glass-panel" variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <h2>Import</h2>
       <p>Drop an Anki <code>.apkg</code> export, or a document/media file — text, PDF, EPUB, image (OCR), audio (ASR), or subtitles.</p>
+      <p className="mt-4">
+        Next: import creates deck(s) and cards, then you can review immediately from Decks.
+      </p>
 
       <div className="form-group mt-8">
         <input
@@ -87,7 +90,7 @@ export default function Import() {
           onChange={(e) => setDeckName(e.target.value)}
         />
         <button disabled={!file || busy} onClick={handleImport} className="btn-primary lg">
-          {busy ? "Importing..." : "Import"}
+          {busy ? "Importing..." : "Start import"}
         </button>
       </div>
     </motion.div>

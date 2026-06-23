@@ -25,7 +25,7 @@ afterAll(() => {
   server.close();
 });
 
-async function buildApkgBuffer(): Promise<Buffer> {
+async function buildApkgBuffer(noteCount = 1): Promise<Buffer> {
   const SQL = await initSqlJs();
   const sqldb = new SQL.Database();
   sqldb.run(`
@@ -33,9 +33,15 @@ async function buildApkgBuffer(): Promise<Buffer> {
     CREATE TABLE notes (id INTEGER PRIMARY KEY, mid INTEGER, flds TEXT, tags TEXT);
     CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER, ord INTEGER);
     INSERT INTO col (id, models) VALUES (1, '{}');
-    INSERT INTO notes (id, mid, flds, tags) VALUES (1, 1, 'front\x1fback', '');
-    INSERT INTO cards (id, nid, ord) VALUES (1, 1, 0);
   `);
+  const insertNote = sqldb.prepare("INSERT INTO notes (id, mid, flds, tags) VALUES (?, 1, ?, '')");
+  const insertCard = sqldb.prepare("INSERT INTO cards (id, nid, ord) VALUES (?, ?, 0)");
+  for (let i = 1; i <= noteCount; i++) {
+    insertNote.run([i, `front ${i}\x1fback ${i}`]);
+    insertCard.run([i, i]);
+  }
+  insertNote.free();
+  insertCard.free();
   const collData = Buffer.from(sqldb.export());
   sqldb.close();
 
@@ -60,6 +66,19 @@ describe("POST /api/imports/apkg", () => {
 
     const deck = db.prepare("SELECT name FROM decks WHERE name = ?").get("Imported Deck");
     expect(deck).toBeTruthy();
+  });
+
+  it("imports a higher-volume .apkg payload without dropping cards", async () => {
+    const buf = await buildApkgBuffer(120);
+    const form = new FormData();
+    form.append("file", new Blob([buf]), "bulk-deck.apkg");
+    form.append("deckName", "Bulk Import Deck");
+
+    const res = await fetch(`${baseUrl}/api/imports/apkg`, { method: "POST", body: form });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.error).toBeNull();
+    expect(body.data.cardsImported).toBe(120);
   });
 
   it("falls back to the filename (sans extension) when deckName is blank", async () => {
@@ -148,6 +167,73 @@ describe("POST /api/imports/textbook", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/No file uploaded/);
+  });
+
+  it("accepts dirty subtitle input and tracks progress to a terminal state", async () => {
+    const form = new FormData();
+    const noisySubtitles = [
+      "WEBVTT",
+      "",
+      "1",
+      "00:00:01.100 --> 00:00:02.100",
+      "第1話",
+      "",
+      "2",
+      "00:00:02.100 --> 00:00:03.500",
+      "これはテストです。",
+      "",
+      "3",
+      "00:00:03.500 --> 00:00:05.100",
+      "先生は学校に行きます。"
+    ].join("\n");
+    form.append("file", new Blob([Buffer.from(noisySubtitles)]), "episode.vtt");
+    form.append("deckName", "Noisy Subtitle Deck");
+
+    const res = await fetch(`${baseUrl}/api/imports/textbook`, { method: "POST", body: form });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(typeof body.data.jobId).toBe("number");
+
+    let terminal: any = null;
+    for (let i = 0; i < 60; i++) {
+      const jobRes = await fetch(`${baseUrl}/api/imports/jobs/${body.data.jobId}`);
+      expect(jobRes.status).toBe(200);
+      terminal = (await jobRes.json()).data;
+      if (terminal.status === "done" || terminal.status === "error") break;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    expect(["done", "error"]).toContain(terminal.status);
+    if (terminal.status === "error") {
+      throw new Error(`textbook job failed: ${terminal.error}`);
+    }
+    expect((terminal.cards_created ?? 0)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("handles larger noisy .txt imports and still completes", async () => {
+    const form = new FormData();
+    const lessonLines: string[] = ["Lesson 1", "Vocabulary"];
+    for (let i = 0; i < 120; i++) {
+      lessonLines.push(`単語${i} たんご${i} word ${i}`);
+      if (i % 20 === 0) lessonLines.push(" \t ");
+    }
+    lessonLines.push("Grammar", "これはテストです。", "学校へ行きます。");
+    form.append("file", new Blob([Buffer.from(lessonLines.join("\n"))]), "bulk.txt");
+    form.append("deckName", "Bulk Text Deck");
+
+    const res = await fetch(`${baseUrl}/api/imports/textbook`, { method: "POST", body: form });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    const jobId = body.data.jobId as number;
+
+    let finalStatus = "queued";
+    for (let i = 0; i < 80; i++) {
+      const poll = await fetch(`${baseUrl}/api/imports/jobs/${jobId}`);
+      const job = (await poll.json()).data as any;
+      finalStatus = job.status;
+      if (job.status === "done" || job.status === "error") break;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    expect(finalStatus).toBe("done");
   });
 });
 

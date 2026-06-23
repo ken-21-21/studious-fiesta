@@ -9,6 +9,7 @@ const MAX_QUERY_TERMS = 40;
 const MAX_QUERY_TERM_LENGTH = 64;
 
 qaRouter.post("/", async (req, res, next) => {
+  const startedAt = Date.now();
   try {
     const { question, cardId, sourceId } = req.body;
     if (typeof question !== "string" || !question.trim()) {
@@ -51,6 +52,7 @@ qaRouter.post("/", async (req, res, next) => {
       .map((term) => term.slice(0, MAX_QUERY_TERM_LENGTH))
       .filter(Boolean);
 
+    let contextHitCount = 0;
     if (safeTerms.length > 0) {
       const matchQuery = safeTerms.map((t) => `"${t}"`).join(" OR ");
       let ftsSql = `
@@ -70,6 +72,7 @@ qaRouter.post("/", async (req, res, next) => {
       try {
         const results = db.prepare(ftsSql).all(...ftsParams) as any[];
         if (results.length > 0) {
+          contextHitCount = results.length;
           context += `Related material:\n`;
           for (const r of results) {
             context += `- ${r.fields} ${r.tags ? "(Tags: " + r.tags + ")" : ""}\n`;
@@ -117,8 +120,13 @@ ${questionTrimmed}`;
     }
     res.write("data: [DONE]\n\n");
     res.end();
+    const elapsedMs = Date.now() - startedAt;
+    console.info(
+      `[qa] ok elapsedMs=${elapsedMs} cardId=${cardId ?? "none"} sourceId=${sourceId ?? "none"} terms=${safeTerms.length} ftsHits=${contextHitCount}`
+    );
   } catch (err: any) {
-    console.error("QA error:", err);
+    const elapsedMs = Date.now() - startedAt;
+    console.error(`[qa] error elapsedMs=${elapsedMs}`, err);
     if (!res.headersSent) {
       res.status(500).json({ data: null, error: "Failed to answer question" });
     } else if (!res.writableEnded) {

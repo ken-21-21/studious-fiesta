@@ -15,6 +15,11 @@ const MAX_VALUE_LENGTH = 500;
 const MAX_CONTEXT_LENGTH = 2000;
 const MAX_SURFACE_LENGTH = 200;
 const MAX_NOTE_LENGTH = 1000;
+const KANA_READING_RE = /^[\p{sc=Hiragana}\p{sc=Katakana}ーｰ・\s]+$/u;
+
+function normalizeInput(value: string): string {
+  return value.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+}
 
 correctionsRouter.post("/", asyncHandler(async (req, res) => {
   const { kind, surface, context, scope, value, note, sourceId, deckId } = req.body ?? {};
@@ -22,28 +27,39 @@ correctionsRouter.post("/", asyncHandler(async (req, res) => {
     res.status(400).json({ data: null, error: `kind must be one of: ${KINDS.join(", ")}` });
     return;
   }
-  if (typeof value !== "string" || !value.trim()) {
+  if (typeof value !== "string") {
     res.status(400).json({ data: null, error: "value is required" });
     return;
   }
-  const valueTrimmed = value.trim();
+  const valueTrimmed = normalizeInput(value);
+  if (!valueTrimmed) {
+    res.status(400).json({ data: null, error: "value is required" });
+    return;
+  }
   if (valueTrimmed.length > MAX_VALUE_LENGTH) {
     res.status(400).json({ data: null, error: `value must be under ${MAX_VALUE_LENGTH} characters` });
+    return;
+  }
+  if (kind === "reading" && !KANA_READING_RE.test(valueTrimmed)) {
+    res.status(400).json({ data: null, error: "reading corrections must be kana text" });
     return;
   }
   if (scope !== undefined && !SCOPES.includes(scope)) {
     res.status(400).json({ data: null, error: `scope must be one of: ${SCOPES.join(", ")}` });
     return;
   }
-  if (surface !== undefined && (typeof surface !== "string" || !surface.trim() || surface.trim().length > MAX_SURFACE_LENGTH)) {
+  const surfaceTrimmed = typeof surface === "string" ? normalizeInput(surface) : undefined;
+  if (surface !== undefined && (typeof surface !== "string" || !surfaceTrimmed || surfaceTrimmed.length > MAX_SURFACE_LENGTH)) {
     res.status(400).json({ data: null, error: `surface must be a non-empty string under ${MAX_SURFACE_LENGTH} characters` });
     return;
   }
-  if (context !== undefined && (typeof context !== "string" || context.trim().length > MAX_CONTEXT_LENGTH)) {
+  const contextTrimmed = typeof context === "string" ? normalizeInput(context) : undefined;
+  if (context !== undefined && (typeof context !== "string" || (contextTrimmed?.length ?? 0) > MAX_CONTEXT_LENGTH)) {
     res.status(400).json({ data: null, error: `context must be under ${MAX_CONTEXT_LENGTH} characters` });
     return;
   }
-  if (note !== undefined && (typeof note !== "string" || note.trim().length > MAX_NOTE_LENGTH)) {
+  const noteTrimmed = typeof note === "string" ? normalizeInput(note) : undefined;
+  if (note !== undefined && (typeof note !== "string" || (noteTrimmed?.length ?? 0) > MAX_NOTE_LENGTH)) {
     res.status(400).json({ data: null, error: `note must be under ${MAX_NOTE_LENGTH} characters` });
     return;
   }
@@ -57,11 +73,11 @@ correctionsRouter.post("/", asyncHandler(async (req, res) => {
   }
   const correctionInput = {
     kind,
-    surface: typeof surface === "string" ? surface.trim() : undefined,
-    context: typeof context === "string" ? context.trim() : undefined,
+    surface: surfaceTrimmed,
+    context: contextTrimmed,
     scope,
     value: valueTrimmed,
-    note: typeof note === "string" ? note.trim() : undefined,
+    note: noteTrimmed,
     sourceId: sourceId as number | undefined,
     deckId: deckId as number | undefined,
   };
@@ -75,5 +91,8 @@ correctionsRouter.post("/", asyncHandler(async (req, res) => {
   for (const noteId of affectedNoteIds) {
     cardsCreated += await createNewlyEnabledCards(noteId);
   }
+  console.info(
+    `[corrections] kind=${kind} scope=${scope ?? "global"} id=${id} analysesUpdated=${analysesUpdated} cardsUpdated=${cardsUpdated} cardsCreated=${cardsCreated}`
+  );
   res.status(201).json({ data: { id, analysesUpdated, cardsUpdated, cardsCreated }, error: null });
 }));

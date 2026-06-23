@@ -115,7 +115,7 @@ function StudySession({ deckId }: { deckId?: number }) {
           <span>←</span> Decks
         </Link>
         <span className="badge">
-          {queue.length} remaining
+          {queue.length} remaining · {reviewed} reviewed
         </span>
       </div>
       <AnimatePresence mode="wait">

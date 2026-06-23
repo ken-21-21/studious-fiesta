@@ -163,4 +163,27 @@ describe("POST /api/study/cards/:id/review", () => {
     const body = await res.json();
     expect(body.data).toBeNull();
   });
+
+  it("supports long sequential review sessions without losing updates", async () => {
+    const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Long Session Deck')").run().lastInsertRowid);
+    const cardIds: number[] = [];
+    for (let i = 0; i < 45; i++) {
+      const created = makeCard({ deckId });
+      cardIds.push(created.cardId);
+    }
+
+    for (const cardId of cardIds) {
+      const res = await fetch(`${baseUrl}/api/study/cards/${cardId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating: 3 }),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const reviewedCount = (
+      db.prepare("SELECT COUNT(*) AS c FROM cards WHERE deck_id = ? AND reps > 0").get(deckId) as { c: number }
+    ).c;
+    expect(reviewedCount).toBe(45);
+  });
 });

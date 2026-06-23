@@ -27,6 +27,66 @@ describe("database backup", () => {
       fs.unlink(tmpPath, () => {});
     }
   });
+
+  it("captures core linked study data (sources, analyses, cards, review logs)", async () => {
+    const sourceId = Number(
+      db.prepare("INSERT INTO sources (kind, filename, hash) VALUES ('textbook', 'chapter.txt', 'abc123')")
+        .run().lastInsertRowid
+    );
+    const deckId = Number(db.prepare("INSERT INTO decks (name) VALUES ('Integrity Deck')").run().lastInsertRowid);
+    const noteId = Number(
+      db.prepare("INSERT INTO notes (deck_id, source, source_id, fields, tags) VALUES (?, 'textbook', ?, ?, 'grammar')")
+        .run(deckId, sourceId, JSON.stringify({ sentence: "先生は学校に行きます。" })).lastInsertRowid
+    );
+    const cardId = Number(
+      db.prepare(`
+        INSERT INTO cards (note_id, deck_id, card_type, question, answer, media, reps, state)
+        VALUES (?, ?, 'listening', ?, ?, ?, 1, 2)
+      `).run(
+        noteId,
+        deckId,
+        JSON.stringify({ tts: "先生は学校に行きます。", lang: "ja" }),
+        JSON.stringify({ text: "先生は学校に行きます。", lang: "ja" }),
+        JSON.stringify({ audio: "backup-audio.mp3" })
+      ).lastInsertRowid
+    );
+    db.prepare(`
+      INSERT INTO note_analyses (note_id, kind, surface, label, confidence, band, needs_review, alternatives, evidence, payload)
+      VALUES (?, 'reading', '学校', 'がっこう', 0.95, 'high', 0, '[]', '[{"source":"source_furigana"}]', '{}')
+    `).run(noteId);
+    db.prepare(`
+      INSERT INTO review_logs (card_id, rating, state, due, stability, difficulty, elapsed_days, last_elapsed_days, scheduled_days)
+      VALUES (?, 3, 2, datetime('now'), 1.2, 4.5, 1, 0, 2)
+    `).run(cardId);
+
+    const mediaPath = path.join(DATA_DIR, "media", "backup-audio.mp3");
+    fs.writeFileSync(mediaPath, "audio");
+
+    const tmpPath = path.join(os.tmpdir(), `backup-integrity-${Date.now()}.db`);
+    try {
+      await db.backup(tmpPath);
+      const snapshot = new Database(tmpPath, { readonly: true });
+      const linked = snapshot
+        .prepare(`
+          SELECT s.filename AS sourceFile, c.id AS cardId, na.label AS reading, rl.rating AS rating
+          FROM cards c
+          JOIN notes n ON c.note_id = n.id
+          LEFT JOIN sources s ON n.source_id = s.id
+          LEFT JOIN note_analyses na ON na.note_id = n.id
+          LEFT JOIN review_logs rl ON rl.card_id = c.id
+          WHERE c.id = ?
+        `)
+        .get(cardId) as { sourceFile: string; cardId: number; reading: string; rating: number } | undefined;
+      expect(linked?.sourceFile).toBe("chapter.txt");
+      expect(linked?.cardId).toBe(cardId);
+      expect(linked?.reading).toBe("がっこう");
+      expect(linked?.rating).toBe(3);
+      snapshot.close();
+    } finally {
+      fs.unlink(tmpPath, () => {});
+      fs.unlink(mediaPath, () => {});
+    }
+  });
 });
 
 describe("backup routes", () => {
@@ -68,6 +128,18 @@ describe("backup routes", () => {
         snapshot.close();
       } finally {
         fs.unlink(tmpPath, () => {});
+      }
+    });
+
+    it("returns 500 when backup creation fails", async () => {
+      const spy = vi.spyOn(db, "backup").mockRejectedValue(new Error("simulated backup failure"));
+      try {
+        const res = await fetch(`${baseUrl}/api/backup`);
+        expect(res.status).toBe(500);
+        const body = await res.json();
+        expect(body.error).toMatch(/Failed to create backup/);
+      } finally {
+        spy.mockRestore();
       }
     });
   });

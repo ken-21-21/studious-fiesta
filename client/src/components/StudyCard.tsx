@@ -45,6 +45,26 @@ function Furigana({ segments }: { segments?: FuriganaSegment[] }) {
   );
 }
 
+function summarizeEvidence(evidence: unknown): string | null {
+  if (!evidence) return null;
+  if (typeof evidence === "string") return evidence;
+  if (!Array.isArray(evidence)) return "Evidence available";
+  const parts = evidence
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const source = typeof (entry as { source?: unknown }).source === "string"
+        ? (entry as { source: string }).source
+        : null;
+      const detail = typeof (entry as { detail?: unknown }).detail === "string"
+        ? (entry as { detail: string }).detail
+        : null;
+      if (source && detail) return `${source}: ${detail}`;
+      return source ?? detail;
+    })
+    .filter((v): v is string => Boolean(v));
+  return parts.length ? parts.join(" · ") : "Evidence available";
+}
+
 // Pitch accent as a high/low step diagram over the word's morae.
 function PitchDiagram({ pitch, morae }: { pitch: PitchInfo; morae?: string[] }) {
   const units = morae && morae.length ? morae : pitch.morae;
@@ -180,6 +200,9 @@ function AnalysisPanel({
       </button>
       {open && (
         <div className="analysis-content">
+          <p className="analysis-help">
+            Low confidence or “needs review” means the app is surfacing uncertainty, not asserting a fact.
+          </p>
           {provenance && (
             <div className="provenance-info">
               <strong>Source:</strong> {provenance.filename} ({provenance.kind})
@@ -199,9 +222,10 @@ function AnalysisPanel({
                     <span className="analysis-surface">{a.surface}</span>
                     <span className="analysis-label">{a.label}</span>
                     <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
-                    {Boolean(a.evidence) && (
-                      <span className="analysis-evidence" title={JSON.stringify(a.evidence)}>
-                        (Evidence: {typeof a.evidence === "string" ? a.evidence : "Yes"})
+                    {a.needsReview && <span className="analysis-review-flag">Needs review</span>}
+                    {summarizeEvidence(a.evidence) && (
+                      <span className="analysis-evidence" title={summarizeEvidence(a.evidence) ?? undefined}>
+                        {summarizeEvidence(a.evidence)}
                       </span>
                     )}
                     {(a.kind === "reading" || a.kind === "grammar") && (

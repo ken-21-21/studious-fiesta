@@ -10,7 +10,34 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 185 passing (21 files) · typecheck clean · build clean (server + client)
+- **Tests:** 196 passing (21 files) · typecheck clean · build clean (server + client)
+
+### P0/P1 implementation pass: reliability, guardrails, CI, explainability (2026-06-23)
+- Reliability/coverage expansion:
+  - `imports.route.test.ts`: added high-volume `.apkg` import validation (120 notes),
+    noisy subtitle (`.vtt`) import polling to terminal state, and larger noisy `.txt`
+    import completion checks.
+  - `study.route.test.ts`: added long sequential review-session regression (45 cards,
+    all persisted with `reps > 0`).
+  - `backup.test.ts`: added linked-data snapshot integrity assertion across
+    `sources`/`notes`/`cards`/`note_analyses`/`review_logs`, plus backup-route
+    failure behavior (`db.backup` rejection → HTTP 500).
+- Japanese guardrail tightening:
+  - `POST /api/corrections` now normalizes control characters from string inputs
+    and enforces kana-only payloads for `kind=reading` corrections to prevent
+    invalid reading overrides from being promoted into learning content.
+  - Added route tests covering non-kana rejection and normalization behavior.
+- CI discipline:
+  - Added `.github/workflows/ci.yml` to enforce server gates (`typecheck`, `test`,
+    `build`) and client gates (`lint`, `build`) on PRs and tracked branches.
+- Explainability + UX polish:
+  - Study analysis panel now surfaces a plain-language uncertainty hint,
+    explicit `Needs review` badges, and compact evidence summaries.
+  - Study header now shows both remaining and reviewed counts; import flow now
+    clarifies next-step outcome and uses clearer call-to-action copy.
+- Observability baseline:
+  - Added structured latency/outcome logging for `/api/qa` and correction re-gating
+    summaries in `/api/corrections`.
 
 ### Apple-level polish: animations + interactivity (2026-06-23)
 - Added higher-fidelity navigation and motion polish:
