@@ -304,6 +304,7 @@ button.text-input:hover {
   gap: 0.75rem;
   align-items: center;
   width: 100%;
+  flex-wrap: wrap;
 }
 
 .analysis-item.band-low { border-left: 4px solid var(--danger); }
@@ -429,6 +430,9 @@ button.text-input:hover {
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
 }
 
 .pitch-mora {
@@ -505,5 +509,14 @@ rt {
     width: 3.25rem;
     height: 3.25rem;
     font-size: 1.5rem;
+  }
+
+  .analysis-conf,
+  .analysis-evidence {
+    margin-left: 0;
+  }
+
+  .analysis-correct-btn {
+    margin-left: 0;
   }
 }

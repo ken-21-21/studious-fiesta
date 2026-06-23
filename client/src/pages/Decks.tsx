@@ -22,8 +22,6 @@ export default function Decks() {
   // after a newer one and clobber it with stale data.
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     fetchDecks()
       .then((data) => {
         if (cancelled) return;
@@ -42,7 +40,11 @@ export default function Decks() {
     };
   }, [reloadToken]);
 
-  const load = () => setReloadToken((n) => n + 1);
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    setReloadToken((n) => n + 1);
+  };
 
   const handleDelete = (id: number) => {
     // Stable id keyed on the deck: repeat clicks on the same Delete button

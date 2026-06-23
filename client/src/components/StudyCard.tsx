@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchNoteAnalysis,
   submitCorrection,
@@ -103,8 +103,8 @@ function CorrectionForm({
     try {
       await submitCorrection({ kind, surface, value: value.trim(), scope, sourceId, deckId });
       onDone();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to submit correction");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to submit correction");
     } finally {
       setSubmitting(false);
     }
@@ -337,7 +337,7 @@ function ListeningCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCa
   const audioUrl = card.media?.audio ? `/media/${card.media.audio}` : null;
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const playAudio = () => {
+  const playAudio = useCallback(() => {
     if (audioUrl) {
       // Stop any still-playing clip first — without this, clicking the
       // speaker button twice in quick succession overlaps two playbacks.
@@ -348,14 +348,14 @@ function ListeningCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCa
     } else if (card.question.tts) {
       speak(card.question.tts);
     }
-  };
+  }, [audioUrl, card.question.tts]);
 
   useEffect(() => {
     playAudio();
     return () => {
       audioRef.current?.pause();
     };
-  }, [card.id]);
+  }, [card.id, playAudio]);
 
   return (
     <motion.div

@@ -15,6 +15,11 @@ const pageVariants = {
 export default function Study() {
   const [params] = useSearchParams();
   const deckId = params.get("deckId") ? Number(params.get("deckId")) : undefined;
+
+  return <StudySession key={deckId ?? "all"} deckId={deckId} />;
+}
+
+function StudySession({ deckId }: { deckId?: number }) {
   const [queue, setQueue] = useState<StudyCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewed, setReviewed] = useState(0);
@@ -24,9 +29,6 @@ export default function Study() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setReviewed(0);
     fetchQueue(deckId, 30)
       .then((data) => {
         if (cancelled) return;
@@ -44,6 +46,12 @@ export default function Study() {
       cancelled = true;
     };
   }, [deckId, reloadToken]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    setError(null);
+    setReloadToken((n) => n + 1);
+  };
 
   const handleRate = async (rating: 1 | 2 | 3 | 4) => {
     const [current, ...rest] = queue;
@@ -81,7 +89,7 @@ export default function Study() {
           </Link>
         </div>
         <ErrorMessage message={error} />
-        <button onClick={() => setReloadToken((n) => n + 1)} className="btn-secondary mt-8">Retry</button>
+        <button onClick={retryLoad} className="btn-secondary mt-8">Retry</button>
       </motion.div>
     );
   }

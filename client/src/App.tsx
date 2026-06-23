@@ -18,9 +18,9 @@ export default function App() {
           <h1 className="app-title">FSRS Learn</h1>
         </Link>
         <nav className="nav-links">
-          <Link to="/" className="nav-link"><button>Decks</button></Link>
-          <Link to="/add" className="nav-link"><button>Add Card</button></Link>
-          <Link to="/import" className="nav-link"><button>Import</button></Link>
+          <Link to="/" className="btn-secondary">Decks</Link>
+          <Link to="/add" className="btn-secondary">Add Card</Link>
+          <Link to="/import" className="btn-secondary">Import</Link>
         </nav>
       </header>
       <main className="main-content">
