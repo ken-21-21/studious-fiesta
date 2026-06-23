@@ -41,7 +41,9 @@ step above.
    preserving their intent. Only override or drop a change when it:
    - breaks the core invariant — *never silently teach wrong Japanese*
      (confidence/evidence/gating must remain intact), or
-   - violates a locked decision (personal-use only; local OSS for OCR/ASR;
+   - violates a locked decision (personal-use only; OCR via Claude API vision,
+     ASR via a cloud transcription API (e.g. OpenAI Whisper API) — both
+     superseding the original "local OSS for OCR/ASR" decision as of 2026-06;
      Claude API for Q&A; no preloaded curriculum; no rewrite-from-scratch), or
    - breaks `npm run typecheck`, `npm test`, or `npm run build`.
    When I override or drop something, I say so explicitly to the user.
