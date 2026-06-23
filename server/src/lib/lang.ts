@@ -18,22 +18,24 @@ export function isJapaneseDoc(text: string): boolean {
 /**
  * Split mixed Japanese/English text into sentences.
  *
- * Breaks after Japanese terminators (。！？) and after English terminators
+ * Breaks after Japanese terminators (。！？\n) and after English terminators
  * (.!?) followed by whitespace, so a paragraph that mixes an English
  * explanation with Japanese examples is separated correctly.
  */
 export function splitSentences(text: string): string[] {
   const normalized = text.replace(/\r\n?/g, "\n");
+  // Break after Japanese punctuation (。 \u3002, 、 \u3001, ！ \uFF01, ？ \uFF1F) or any newline \n, 
+  // and after English terminators (.!?) followed by whitespace.
   const pieces = normalized
-    .split(/(?<=[。！？])|(?<=[.!?])\s+|\n{2,}/u)
+    .split(/(?<=[\u3002\u3001\uFF01\uFF1F\n])|(?<=[.!?])\s+/u)
     .map((s) => s.trim())
     .filter(Boolean);
 
   const out: string[] = [];
   for (const piece of pieces) {
-    // Collapse internal single newlines/whitespace runs within a sentence.
-    const cleaned = piece.replace(/\s*\n\s*/g, " ").replace(/[ \t]{2,}/g, " ").trim();
-    if (cleaned.length >= 2) out.push(cleaned);
+    // Collapse weird spacing from raw epub/srt imports (including full-width spaces \u3000)
+    const cleaned = piece.replace(/[\s\u3000]+/g, " ").trim();
+    if (cleaned.length >= 1) out.push(cleaned);
   }
   return out;
 }

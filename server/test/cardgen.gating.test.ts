@@ -41,8 +41,10 @@ describe("study-material gating on reading confidence", () => {
   });
 
   it("gates readings on sentence cloze and scramble cards", async () => {
-    // これは生物だ。 — pickJpClozeIndex blanks the middle content word, which
-    // for this sentence is 生物 (ambiguous: living thing / raw food).
+    // これは生物だ。 — 生物 (living thing / raw food) is ambiguous and must
+    // never become a cloze blank's answer, even though it's the sentence's
+    // most "interesting" content word: pickJpClozeIndex excludes any token
+    // whose reading needs review, so the blank falls to これ instead.
     const lesson: Lesson = {
       number: 1,
       title: "Test",
@@ -54,11 +56,13 @@ describe("study-material gating on reading confidence", () => {
 
     const cloze = note.cards.find((c) => c.cardType === "cloze");
     expect(cloze).toBeTruthy();
-    // Cloze targets "生物" which is ambiguous.
-    expect((cloze!.answer as any).reading).toBeUndefined();
-    expect((cloze!.answer as any).readingUncertain).toBe(true);
-    expect(Array.isArray((cloze!.answer as any).readingAlternatives)).toBe(true);
+    // The cloze answer itself must be a confident reading, never the
+    // ambiguous 生物.
+    expect((cloze!.answer as any).text).not.toBe("生物");
+    expect((cloze!.answer as any).readingUncertain).toBeUndefined();
 
+    // Scramble still surfaces the sentence-level ambiguity from 生物, since
+    // its gating considers every word in the sentence, not just the blank.
     const scramble = note.cards.find((c) => c.cardType === "scramble");
     expect(scramble).toBeTruthy();
     expect((scramble!.answer as any).reading).toBeUndefined();

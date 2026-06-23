@@ -70,15 +70,23 @@ export interface NoteAnalysis {
   createdAt: string;
 }
 
+async function unwrap<T>(res: Response, fallbackError: string): Promise<T> {
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? fallbackError);
+  return body.data as T;
+}
+
 export async function fetchDecks(): Promise<Deck[]> {
   const res = await fetch("/api/decks");
-  if (!res.ok) throw new Error("Failed to load decks");
-  return res.json();
+  return unwrap<Deck[]>(res, "Failed to load decks");
 }
 
 export async function deleteDeck(id: number): Promise<void> {
   const res = await fetch(`/api/decks/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete deck");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to delete deck");
+  }
 }
 
 export async function fetchQueue(deckId?: number, limit = 20): Promise<StudyCard[]> {
@@ -86,8 +94,7 @@ export async function fetchQueue(deckId?: number, limit = 20): Promise<StudyCard
   if (deckId) params.set("deckId", String(deckId));
   params.set("limit", String(limit));
   const res = await fetch(`/api/study/queue?${params}`);
-  if (!res.ok) throw new Error("Failed to load study queue");
-  return res.json();
+  return unwrap<StudyCard[]>(res, "Failed to load study queue");
 }
 
 export async function reviewCard(cardId: number, rating: 1 | 2 | 3 | 4): Promise<void> {
@@ -96,7 +103,7 @@ export async function reviewCard(cardId: number, rating: 1 | 2 | 3 | 4): Promise
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rating }),
   });
-  if (!res.ok) throw new Error("Failed to submit review");
+  await unwrap(res, "Failed to submit review");
 }
 
 export async function importApkg(file: File, deckName: string) {
@@ -104,9 +111,7 @@ export async function importApkg(file: File, deckName: string) {
   fd.append("file", file);
   fd.append("deckName", deckName);
   const res = await fetch("/api/import/apkg", { method: "POST", body: fd });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Import failed");
-  return data;
+  return unwrap<any>(res, "Import failed");
 }
 
 export interface ImportJob {
@@ -124,9 +129,7 @@ export interface ImportJob {
 
 export async function fetchImportJob(jobId: number): Promise<ImportJob> {
   const res = await fetch(`/api/import/jobs/${jobId}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Failed to load import job");
-  return data;
+  return unwrap<ImportJob>(res, "Failed to load import job");
 }
 
 // Textbook import runs as a background job on the server (returns 202 +
@@ -141,10 +144,7 @@ export async function importTextbook(
   fd.append("file", file);
   fd.append("deckName", deckName);
   const res = await fetch("/api/import/textbook", { method: "POST", body: fd });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Import failed");
-
-  const jobId = data.jobId;
+  const { jobId } = await unwrap<{ jobId: number }>(res, "Import failed");
   const POLL_MS = 500;
   const MAX_WAIT_MS = 5 * 60 * 1000;
   const start = Date.now();
@@ -164,8 +164,7 @@ export async function importTextbook(
 
 export async function fetchNoteAnalysis(noteId: number): Promise<NoteAnalysis[]> {
   const res = await fetch(`/api/notes/${noteId}/analysis`);
-  if (!res.ok) throw new Error("Failed to load note analysis");
-  return res.json();
+  return unwrap<NoteAnalysis[]>(res, "Failed to load note analysis");
 }
 
 export type CorrectionKind =
@@ -199,9 +198,7 @@ export async function addNote(input: AddNoteInput): Promise<{ noteId: number; ca
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Failed to add card");
-  return data;
+  return unwrap(res, "Failed to add card");
 }
 
 export async function submitCorrection(input: CorrectionInput): Promise<{ id: number }> {
@@ -210,9 +207,5 @@ export async function submitCorrection(input: CorrectionInput): Promise<{ id: nu
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || "Failed to submit correction");
-  }
-  return res.json();
+  return unwrap(res, "Failed to submit correction");
 }

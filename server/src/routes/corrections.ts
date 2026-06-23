@@ -15,15 +15,15 @@ const SCOPES: CorrectionScope[] = [
 correctionsRouter.post("/", asyncHandler(async (req, res) => {
   const { kind, surface, context, scope, value, note, sourceId, deckId } = req.body ?? {};
   if (!KINDS.includes(kind)) {
-    res.status(400).json({ error: `kind must be one of: ${KINDS.join(", ")}` });
+    res.status(400).json({ data: null, error: `kind must be one of: ${KINDS.join(", ")}` });
     return;
   }
   if (typeof value !== "string" || !value.trim()) {
-    res.status(400).json({ error: "value is required" });
+    res.status(400).json({ data: null, error: "value is required" });
     return;
   }
   if (scope !== undefined && !SCOPES.includes(scope)) {
-    res.status(400).json({ error: `scope must be one of: ${SCOPES.join(", ")}` });
+    res.status(400).json({ data: null, error: `scope must be one of: ${SCOPES.join(", ")}` });
     return;
   }
   const correctionInput = {
@@ -46,5 +46,5 @@ correctionsRouter.post("/", asyncHandler(async (req, res) => {
   for (const noteId of affectedNoteIds) {
     cardsCreated += await createNewlyEnabledCards(noteId);
   }
-  res.status(201).json({ id, analysesUpdated, cardsUpdated, cardsCreated });
+  res.status(201).json({ data: { id, analysesUpdated, cardsUpdated, cardsCreated }, error: null });
 }));

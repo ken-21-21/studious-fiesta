@@ -10,7 +10,62 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 65 passing (11 files) · typecheck clean · build clean (server + client)
+- **Tests:** 70 passing (12 files) · typecheck clean · build clean (server + client)
+
+### Reconciliation note (2026-06-23, ANTILOG → mine, round 4)
+`ANTILOG` had moved 2 more commits (`7de1363` "Apple-Level Polish", `70f8162`
+"Enterprise Hardening") past the round-3 sync point — caught by the
+pre-push safety check before any sync, as designed. Merged via
+`git merge --no-ff origin/ANTILOG`, resolved by hand:
+- **Breaking API contract change, integrated:** nearly every JSON route now
+  responds with a uniform `{ data, error }` envelope instead of a bare
+  payload (`decks.ts`, `study.ts`, `imports.ts`, `notes.ts`, `corrections.ts`,
+  `sources.ts`, `qa.ts`). Updated `client/src/lib/api.ts` to unwrap `.data`
+  (new `unwrap<T>()` helper) in every fetch function that talks to those
+  routes; `GET /api/backup` is unaffected (file download, not JSON). Applied
+  the same envelope to `POST /api/notes`, which ANTILOG hadn't touched yet,
+  for consistency.
+- **New UI dependencies, integrated:** `framer-motion` (flip-card 3D reveal
+  via `rotateY` + `backface-visibility: hidden`, page-transition variants)
+  and `sonner` (toast notifications, replacing inline status `<p>` tags and
+  `confirm()` dialogs on the Decks/Import pages). Installed both as real
+  `client/package.json` dependencies.
+- **StudyCard.tsx collision:** ANTILOG converted every card type to the
+  flip-card structure (front/back simultaneously in the DOM, animated via
+  `motion.div`). Kept that structure but layered my `deckId`-aware
+  `AnalysisPanel`/`CorrectionForm` (inline correction submission, scoped by
+  reading/grammar kind) onto every card's back face, and kept the
+  `VocabCard`/`PitchCard` card types and furigana/pitch-diagram rendering
+  entirely — ANTILOG's version doesn't have these card types at all.
+- **Import.tsx collision:** kept my async-job-polling `importTextbook(file,
+  name, onProgress)` call (the real, current 3-arg contract returning
+  `{decks, totalCards}`) and the wider supported-media-type list; layered
+  ANTILOG's `toast`-based progress/result UX on top instead of the removed
+  `setStatus` state.
+- **corrections.ts (lib) collision:** kept my synchronous `addCorrection`
+  (the route's hybrid re-gating orchestration depends on it being sync) and
+  merged in ANTILOG's input validation (`VALID_KINDS`/`VALID_SCOPES`) and
+  null-byte sanitization on every string field.
+- **Invariant-strengthening fix, kept:** `cardgen.ts`'s `pickJpClozeIndex`
+  now excludes any token whose reading `needsReview` from cloze-candidate
+  selection — an ambiguous-reading word can no longer become a cloze
+  blank's answer, even when it's the sentence's most "interesting" content
+  word. Updated the pre-existing `cardgen.gating.test.ts` case that asserted
+  the old (less safe) behavior.
+- **Also kept as-is:** `normalizeText()` pipeline step in `tokenizer.ts`
+  (strips zero-width chars, full/half-width normalization, NFC) ahead of
+  morphological analysis; `en.ts`'s cloze blanking rewritten to use
+  `wink-nlp`'s exact token span instead of regex word-boundary counting;
+  FSRS numeric clamping (`bound()` in `fsrs.ts`) against NaN/Infinity before
+  persisting, plus a fix for `result.log.elapsed_days` being passed twice
+  instead of once with `last_elapsed_days`; `db.pragma("synchronous =
+  NORMAL")` / `busy_timeout = 5000`; `qa.ts`'s `AbortController` wired to
+  client disconnect + 15s timeout; Multer upload limits (`files`/`fields`/
+  `fieldSize`) with distinct 413/400 handling; `lang.ts`'s sentence
+  splitting now treats `、` and any `\n` as terminators.
+- **Fixed during merge:** `notes.manual.test.ts` asserted the old bare
+  response shape (`body.noteId`) — updated to `body.data.noteId` for the new
+  envelope.
 
 ### Reconciliation note (2026-06-23, ANTILOG → mine, round 3)
 `ANTILOG` had been force-pushed with 5 new commits (Phase B+ re-gating,

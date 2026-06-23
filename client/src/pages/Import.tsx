@@ -1,12 +1,18 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { importApkg, importTextbook, type ImportJob } from "../lib/api";
-import { ErrorMessage } from "../components/Loaders";
+
+const pageVariants = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  exit: { opacity: 0, y: -20, transition: { duration: 0.2 } }
+};
 
 export default function Import() {
   const [file, setFile] = useState<File | null>(null);
   const [deckName, setDeckName] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
 
@@ -22,36 +28,37 @@ export default function Import() {
     ];
     const isSupported = isApkg || MEDIA_EXTS.some((ext) => lowerName.endsWith(ext));
     if (!isSupported) {
-      setStatus("Error: unsupported file type. Use .apkg, or a document/media file (.txt, .pdf, .epub, image, audio, .srt/.vtt).");
+      toast.error("Unsupported file type. Use .apkg, or a document/media file (.txt, .pdf, .epub, image, audio, .srt/.vtt).");
       return;
     }
 
     setBusy(true);
-    setStatus("Importing...");
+    const toastId = toast.loading("Importing...");
     try {
       const name = deckName || file.name;
       if (isApkg) {
         const result = await importApkg(file, name);
-        setStatus(`Imported ${result.cardsImported} cards.`);
+        toast.success(`Imported ${result.cardsImported} cards.`, { id: toastId });
       } else {
         const result = await importTextbook(file, name, (job: ImportJob) => {
-          if (job.message) setStatus(job.message);
+          if (job.message) toast.loading(job.message, { id: toastId });
         });
         const deckCount = result.decks.length;
-        setStatus(
-          `Created ${deckCount} deck${deckCount === 1 ? "" : "s"}, ${result.totalCards} card(s).`
+        toast.success(
+          `Created ${deckCount} deck${deckCount === 1 ? "" : "s"}, ${result.totalCards} card(s).`,
+          { id: toastId }
         );
       }
       setTimeout(() => navigate("/"), 1200);
     } catch (err: any) {
-      setStatus(`Error: ${err.message}`);
+      toast.error(`Error: ${err.message}`, { id: toastId });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="glass-panel">
+    <motion.div className="glass-panel" variants={pageVariants} initial="initial" animate="animate" exit="exit">
       <h2>Import</h2>
       <p>Drop an Anki <code>.apkg</code> export, or a document/media file — text, PDF, EPUB, image (OCR), audio (ASR), or subtitles.</p>
 
@@ -70,16 +77,7 @@ export default function Import() {
         <button disabled={!file || busy} onClick={handleImport} className="btn-primary lg">
           {busy ? "Importing..." : "Import"}
         </button>
-        {status && (
-          <div className="mt-8">
-            {status.startsWith("Error") ? (
-              <ErrorMessage message={status.replace("Error: ", "")} />
-            ) : (
-              <p style={{ color: "var(--success)", fontWeight: 500 }}>{status}</p>
-            )}
-          </div>
-        )}
       </div>
-    </div>
+    </motion.div>
   );
 }

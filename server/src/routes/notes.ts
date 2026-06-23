@@ -15,22 +15,22 @@ const MAX_DECK_NAME_LENGTH = 200;
 notesRouter.post("/", (req, res) => {
   const { deckId, deckName, front, back, tags } = req.body ?? {};
   if (typeof front !== "string" || !front.trim()) {
-    return res.status(400).json({ error: "front is required" });
+    return res.status(400).json({ data: null, error: "front is required" });
   }
   if (typeof back !== "string" || !back.trim()) {
-    return res.status(400).json({ error: "back is required" });
+    return res.status(400).json({ data: null, error: "back is required" });
   }
   if (front.length > MAX_FIELD_LENGTH || back.length > MAX_FIELD_LENGTH) {
-    return res.status(400).json({ error: `front/back must be under ${MAX_FIELD_LENGTH} characters` });
+    return res.status(400).json({ data: null, error: `front/back must be under ${MAX_FIELD_LENGTH} characters` });
   }
 
   let resolvedDeckId: number;
   if (deckId !== undefined) {
     if (!Number.isInteger(deckId) || deckId <= 0) {
-      return res.status(400).json({ error: "Invalid deckId" });
+      return res.status(400).json({ data: null, error: "Invalid deckId" });
     }
     const deck = db.prepare("SELECT id FROM decks WHERE id = ?").get(deckId);
-    if (!deck) return res.status(404).json({ error: "Deck not found" });
+    if (!deck) return res.status(404).json({ data: null, error: "Deck not found" });
     resolvedDeckId = deckId;
   } else {
     const trimmed = typeof deckName === "string" ? deckName.trim() : "";
@@ -64,7 +64,7 @@ notesRouter.post("/", (req, res) => {
     ).lastInsertRowid
   );
 
-  res.status(201).json({ noteId, cardId, deckId: resolvedDeckId });
+  res.status(201).json({ data: { noteId, cardId, deckId: resolvedDeckId }, error: null });
 });
 
 // The persisted linguistic analysis behind a note's cards: every reading
@@ -74,12 +74,12 @@ notesRouter.get("/:id/analysis", (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      res.status(400).json({ error: "Invalid note id" });
+      res.status(400).json({ data: null, error: "Invalid note id" });
       return;
     }
     const note = db.prepare("SELECT id FROM notes WHERE id = ?").get(id);
     if (!note) {
-      res.status(404).json({ error: "Note not found" });
+      res.status(404).json({ data: null, error: "Note not found" });
       return;
     }
 
@@ -119,7 +119,7 @@ notesRouter.get("/:id/analysis", (req, res, next) => {
     }
   }
 
-  res.json(analyses);
+  res.json({ data: analyses, error: null });
   } catch (err) {
     next(err);
   }

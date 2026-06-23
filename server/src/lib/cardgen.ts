@@ -244,9 +244,11 @@ export async function vocabNote(entry: VocabEntry): Promise<NoteSpec> {
 function pickJpClozeIndex(tokens: AnalyzedToken[]): number | null {
   const content = tokens
     .map((t, i) => ({ t, i }))
-    .filter((x) => x.t.isContentWord && hasJapanese(x.t.surface));
+    .filter((x) => x.t.isContentWord && hasJapanese(x.t.surface) && !x.t.readingDecision.needsReview);
   if (content.length) return content[Math.floor(content.length / 2)].i;
-  const particles = tokens.map((t, i) => ({ t, i })).filter((x) => x.t.pos === "助詞");
+  const particles = tokens
+    .map((t, i) => ({ t, i }))
+    .filter((x) => x.t.pos === "助詞" && !x.t.readingDecision.needsReview);
   if (particles.length) return particles[Math.floor(particles.length / 2)].i;
   return null;
 }

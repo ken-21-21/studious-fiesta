@@ -1,6 +1,7 @@
 import { getPrimaryAnalyzer, type MorphToken } from "./analyzer.js";
 import { disambiguateReading } from "./readings.js";
 import type { ReadingDecision } from "./types.js";
+import { normalizeText } from "./normalize.js";
 
 // Parts of speech that make good vocabulary / cloze targets.
 const CONTENT_POS = new Set(["名詞", "動詞", "形容詞", "副詞", "形状詞", "連体詞"]);
@@ -63,7 +64,8 @@ function toAnalyzed(t: MorphToken, opts: AnalyzeOptions): AnalyzedToken {
 }
 
 export async function tokenize(text: string, opts: AnalyzeOptions = {}): Promise<AnalyzedToken[]> {
-  const tokens = await getPrimaryAnalyzer().analyze(text);
+  const normalizedText = normalizeText(text);
+  const tokens = await getPrimaryAnalyzer().analyze(normalizedText);
   return tokens.map((t) => toAnalyzed(t, opts));
 }
 

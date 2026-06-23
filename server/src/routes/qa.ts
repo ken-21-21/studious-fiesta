@@ -8,7 +8,7 @@ qaRouter.post("/", async (req, res, next) => {
   try {
     const { question, cardId, sourceId } = req.body;
     if (!question || typeof question !== "string") {
-      res.status(400).json({ error: "question is required" });
+      res.status(400).json({ data: null, error: "question is required" });
       return;
     }
 
@@ -77,12 +77,17 @@ ${question}`;
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
+    const abortController = new AbortController();
+    req.on("close", () => {
+      abortController.abort();
+    });
+
     const stream = await anthropic.messages.create({
       model: "claude-3-haiku-20240307",
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
       stream: true,
-    });
+    }, { signal: abortController.signal, timeout: 15000 });
 
     for await (const _chunk of stream as any) {
       const chunk = _chunk as any;
@@ -95,8 +100,8 @@ ${question}`;
   } catch (err: any) {
     console.error("QA error:", err);
     if (!res.headersSent) {
-      res.status(500).json({ error: err.message });
-    } else {
+      res.status(500).json({ data: null, error: err.message });
+    } else if (!res.writableEnded) {
       res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
       res.end();
     }

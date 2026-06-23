@@ -41,16 +41,37 @@ const insertStmt = db.prepare(`
   VALUES (@kind, @surface, @context, @scope, @value, @note, @sourceId, @deckId)
 `);
 
+const VALID_KINDS = new Set<CorrectionKind>([
+  "reading", "tokenization", "grammar", "pitch", "ocr", "asr", "translation", "field_mapping"
+]);
+const VALID_SCOPES = new Set<CorrectionScope>([
+  "occurrence", "sentence", "source", "deck", "matching", "global"
+]);
+
+function sanitize(s: string | undefined): string | null {
+  if (typeof s !== "string") return null;
+  const cleaned = s.replace(/[\u0000]/g, "").trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 export function addCorrection(input: CorrectionInput): number {
+  if (!VALID_KINDS.has(input.kind)) throw new Error(`Invalid correction kind: ${input.kind}`);
+
+  const scope = input.scope ?? "global";
+  if (!VALID_SCOPES.has(scope)) throw new Error(`Invalid correction scope: ${scope}`);
+
+  const value = sanitize(input.value);
+  if (!value) throw new Error("Correction value cannot be empty or malformed");
+
   const res = insertStmt.run({
     kind: input.kind,
-    surface: input.surface ?? null,
-    context: input.context ?? null,
-    scope: input.scope ?? "global",
-    value: input.value,
-    note: input.note ?? null,
-    sourceId: input.sourceId ?? null,
-    deckId: input.deckId ?? null,
+    surface: sanitize(input.surface),
+    context: sanitize(input.context),
+    scope,
+    value,
+    note: sanitize(input.note),
+    sourceId: typeof input.sourceId === "number" ? input.sourceId : null,
+    deckId: typeof input.deckId === "number" ? input.deckId : null,
   });
   return Number(res.lastInsertRowid);
 }

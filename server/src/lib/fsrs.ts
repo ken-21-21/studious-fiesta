@@ -63,6 +63,20 @@ export function gradeCard(row: CardRow, rating: Grade, now = new Date()) {
   const result = scheduler.next(fsrsCard, now, rating);
   const c = result.card;
 
+  const bound = (val: number, min: number, max: number, fallback: number) => {
+    if (typeof val !== "number" || !Number.isFinite(val) || Number.isNaN(val)) return fallback;
+    return Math.max(min, Math.min(max, val));
+  };
+
+  c.stability = bound(c.stability, 0.01, 36500, 0.1);
+  c.difficulty = bound(c.difficulty, 1, 10, 5);
+  c.scheduled_days = bound(c.scheduled_days, 0, 36500, 0);
+  c.elapsed_days = bound(c.elapsed_days, 0, 36500, 0);
+  result.log.elapsed_days = bound(result.log.elapsed_days, 0, 36500, 0);
+  result.log.scheduled_days = bound(result.log.scheduled_days, 0, 36500, 0);
+
+  result.log.last_elapsed_days = bound(result.log.last_elapsed_days, 0, 36500, 0);
+
   const persist = db.transaction(() => {
     updateCardStmt.run(
       c.due.toISOString(),
@@ -85,7 +99,7 @@ export function gradeCard(row: CardRow, rating: Grade, now = new Date()) {
       c.stability,
       c.difficulty,
       result.log.elapsed_days,
-      result.log.elapsed_days,
+      result.log.last_elapsed_days,
       result.log.scheduled_days,
       now.toISOString()
     );

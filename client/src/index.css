@@ -1,11 +1,11 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Outfit:wght@400;500;600;700&display=swap');
 
 :root {
   --text: #4b5563;
   --text-h: #111827;
   --bg: #f9fafb;
   --bg-card: rgba(255, 255, 255, 0.7);
-  --border: #e5e7eb;
+  --border: rgba(255, 255, 255, 0.5);
   --code-bg: #f3f4f6;
   --accent: #6366f1;
   --accent-hover: #4f46e5;
@@ -13,31 +13,30 @@
   --accent-border: rgba(99, 102, 241, 0.5);
   
   --text: #e2e8f0;
-  --text-h: #f8fafc;
-  --bg: #0f111a;
-  --bg-surface: rgba(30, 33, 43, 0.6);
-  --glass-bg: rgba(30, 33, 43, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --border: rgba(255, 255, 255, 0.08);
-  --code-bg: rgba(15, 17, 26, 0.8);
+  --text-h: #ffffff;
+  --bg: #09090b;
+  --bg-surface: rgba(18, 18, 24, 0.65);
+  --border: rgba(255, 255, 255, 0.12);
+  --code-bg: rgba(0, 0, 0, 0.4);
   --accent: #8b5cf6;
-  --accent-glow: rgba(139, 92, 246, 0.4);
-  --accent-bg: rgba(139, 92, 246, 0.1);
-  --accent-border: rgba(139, 92, 246, 0.5);
+  --accent-glow: rgba(139, 92, 246, 0.5);
+  --accent-bg: rgba(139, 92, 246, 0.15);
+  --accent-border: rgba(139, 92, 246, 0.6);
   --danger: #ef4444;
   --success: #22c55e;
   --warning: #f59e0b;
   --info: #3b82f6;
-  --glass-bg: rgba(30, 33, 43, 0.6);
+  --glass-bg: rgba(20, 20, 25, 0.55);
   --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-glow: rgba(255, 255, 255, 0.15);
 
-  --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 6px 18px -6px rgba(0, 0, 0, 0.7), 0 0 24px var(--accent-glow);
-  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.8), 0 0 40px var(--accent-glow);
-  --shadow-glow: 0 0 20px var(--accent-glow);
+  --shadow-sm: 0 4px 12px -2px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  --shadow-md: 0 12px 24px -4px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.8), 0 0 60px var(--accent-glow), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  --shadow-glow: 0 0 24px var(--accent-glow);
 
-  --sans: 'Inter', system-ui, sans-serif;
-  --heading: 'Outfit', system-ui, sans-serif;
+  --sans: 'Inter', 'Noto Sans JP', system-ui, sans-serif;
+  --heading: 'Outfit', 'Noto Sans JP', system-ui, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
   font: 16px/1.6 var(--sans);
@@ -148,12 +147,15 @@ a:hover {
 
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
-  border-radius: 1rem;
+  border-top-color: var(--glass-border-glow);
+  border-left-color: var(--glass-border-glow);
+  border-radius: 1.25rem;
   box-shadow: var(--shadow-md);
   padding: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .app-header {
@@ -216,17 +218,20 @@ a:hover {
   align-items: center;
   padding: 1.25rem;
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
-  border-radius: 1rem;
+  border-top-color: var(--glass-border-glow);
+  border-left-color: var(--glass-border-glow);
+  border-radius: 1.25rem;
   box-shadow: var(--shadow-sm);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .deck-item:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
   box-shadow: var(--shadow-md);
+  border-color: var(--accent-border);
 }
 
 .deck-item-info strong {

@@ -32,15 +32,15 @@ describe("manual note creation", () => {
     });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.noteId).toBeGreaterThan(0);
-    expect(body.cardId).toBeGreaterThan(0);
+    expect(body.data.noteId).toBeGreaterThan(0);
+    expect(body.data.cardId).toBeGreaterThan(0);
 
-    const card = db.prepare("SELECT card_type, question, answer FROM cards WHERE id = ?").get(body.cardId) as any;
+    const card = db.prepare("SELECT card_type, question, answer FROM cards WHERE id = ?").get(body.data.cardId) as any;
     expect(card.card_type).toBe("basic");
     expect(JSON.parse(card.question).text).toBe("犬");
     expect(JSON.parse(card.answer).text).toBe("dog");
 
-    const note = db.prepare("SELECT source FROM notes WHERE id = ?").get(body.noteId) as any;
+    const note = db.prepare("SELECT source FROM notes WHERE id = ?").get(body.data.noteId) as any;
     expect(note.source).toBe("manual");
   });
 
@@ -53,7 +53,7 @@ describe("manual note creation", () => {
     });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.deckId).toBe(deckId);
+    expect(body.data.deckId).toBe(deckId);
   });
 
   it("rejects a missing front/back", async () => {
