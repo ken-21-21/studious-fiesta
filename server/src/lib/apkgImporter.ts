@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { db, MEDIA_DIR } from "../db/index.js";
 import { newCardDefaults } from "./fsrs.js";
+import { vocabNote, type NoteSpec } from "./cardgen.js";
 
 // Caps on *uncompressed* size, checked against zip header metadata before any
 // entry is decompressed — multer's upload limit only bounds the compressed
@@ -112,6 +113,11 @@ export async function importApkg(filePath: string, deckName: string, originalFil
       due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  const insertAnalysis = db.prepare(`
+    INSERT INTO note_analyses (note_id, kind, surface, label, span_start, span_end,
+      confidence, band, needs_review, analyzer_name, analyzer_version, evidence, alternatives, payload)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
 
   const fileHash = await new Promise<string>((resolve, reject) => {
     const hash = crypto.createHash("sha256");
@@ -132,6 +138,7 @@ export async function importApkg(filePath: string, deckName: string, originalFil
   const { sourceId, deckId } = setupTransaction();
 
   const colStmt = sqlDb.prepare("SELECT models FROM col");
+  colStmt.step(); // advance to the first (and only) row before reading
   const [modelsJson] = colStmt.get() as [string];
   colStmt.free();
   let models: Record<string, any> = {};
@@ -161,7 +168,7 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     console.error("Error reading samples:", e);
   }
 
-  type FieldMapping = { japaneseIdx: number; readingIdx: number; meaningIdx: number; audioIdx: number };
+  type FieldMapping = { japaneseIdx: number; readingIdx: number; meaningIdx: number; audioIdx: number; isJapaneseDeck: boolean };
   const modelFieldMap = new Map<string, FieldMapping>();
   const insertCorrection = db.prepare(
     "INSERT INTO corrections (kind, scope, source_id, context, value) VALUES ('field_mapping', 'source', ?, ?, ?)"
@@ -221,12 +228,15 @@ export async function importApkg(filePath: string, deckName: string, originalFil
         }
       }
 
+      // isJapaneseDeck is only true when evidence was found from field names or
+      // sample content — not from the always-applied fallback of index 0.
+      const isJapaneseDeck = japaneseIdx >= 0;
       if (japaneseIdx === -1) japaneseIdx = 0;
       if (meaningIdx === -1 && fieldNames.length > 1) {
         meaningIdx = 1;
       }
 
-      const mapping: FieldMapping = { japaneseIdx, readingIdx, meaningIdx, audioIdx };
+      const mapping: FieldMapping = { japaneseIdx, readingIdx, meaningIdx, audioIdx, isJapaneseDeck };
       modelFieldMap.set(midStr, mapping);
       insertCorrection.run(sourceId, midStr, JSON.stringify(mapping));
     }
@@ -249,74 +259,156 @@ export async function importApkg(filePath: string, deckName: string, originalFil
   let imported = 0;
   const CHUNK_SIZE = 500;
 
-  const processChunk = db.transaction((chunk: any[]) => {
-    let chunkImported = 0;
+  // Pre-analysis phase: runs async, outside any DB transaction.
+  // Only processes rows whose model was positively identified as a Japanese deck.
+  // The Anki deck's reading field is intentionally NOT passed to vocabNote — it is
+  // not treated as ground truth. The kuromoji confidence pipeline runs independently
+  // on the term, so uncertain readings are gated the same way textbook imports are.
+  async function analyzeJapaneseRows(chunk: any[]): Promise<Map<number, NoteSpec>> {
+    const results = new Map<number, NoteSpec>();
     for (const row of chunk) {
-      const [nid, mid, flds, tags] = row as [number, number, string, string];
-      const parts = flds.split("\x1f");
-      const front = parts[0] ?? "";
-      const back = parts[1] ?? "";
-
-      const frontMedia = extractMediaRefs(front);
-      const backMedia = extractMediaRefs(back);
-
-      const images = [...frontMedia.images, ...backMedia.images].map(
-        (orig) => origNameToStored[orig] ?? orig
-      );
-      const audio = [...frontMedia.audio, ...backMedia.audio].map(
-        (orig) => origNameToStored[orig] ?? orig
-      );
-
-      const fields: any = { Front: stripTags(front), Back: stripTags(back), FrontHtml: front, BackHtml: back };
+      const [nid, mid, flds] = row as [number, number, string];
       const mapping = modelFieldMap.get(String(mid));
-      if (mapping) {
-        if (mapping.japaneseIdx >= 0) fields.japanese = stripTags(parts[mapping.japaneseIdx] ?? "");
-        if (mapping.readingIdx >= 0) fields.reading = stripTags(parts[mapping.readingIdx] ?? "");
-        if (mapping.meaningIdx >= 0) fields.meaning = stripTags(parts[mapping.meaningIdx] ?? "");
-        if (mapping.audioIdx >= 0) {
+      if (!mapping?.isJapaneseDeck) continue;
+      const parts = flds.split("\x1f");
+      const term = stripTags(parts[mapping.japaneseIdx] ?? "");
+      if (!term) continue;
+      const gloss = mapping.meaningIdx >= 0 ? stripTags(parts[mapping.meaningIdx] ?? "") : "";
+      try {
+        const spec = await vocabNote({ term, gloss });
+        results.set(nid, spec);
+      } catch {
+        // Analysis failure: this row falls back to basic card in persistChunk
+      }
+    }
+    return results;
+  }
+
+  // Persist phase: synchronous DB transaction using pre-computed analysis.
+  const persistChunk = db.transaction(
+    (chunk: any[], preAnalyzed: Map<number, NoteSpec>) => {
+      let chunkImported = 0;
+      for (const row of chunk) {
+        const [nid, mid, flds, tags] = row as [number, number, string, string];
+        const parts = flds.split("\x1f");
+        const front = parts[0] ?? "";
+        const back = parts[1] ?? "";
+
+        const frontMedia = extractMediaRefs(front);
+        const backMedia = extractMediaRefs(back);
+
+        const images = [...frontMedia.images, ...backMedia.images].map(
+          (orig) => origNameToStored[orig] ?? orig
+        );
+        const audio = [...frontMedia.audio, ...backMedia.audio].map(
+          (orig) => origNameToStored[orig] ?? orig
+        );
+
+        const mapping = modelFieldMap.get(String(mid));
+        if (mapping && mapping.audioIdx >= 0) {
           const audioRefs = extractMediaRefs(parts[mapping.audioIdx] ?? "");
           const specificAudio = audioRefs.audio.map((orig) => origNameToStored[orig] ?? orig);
           audio.unshift(...specificAudio); // Prepend so it becomes audio[0]
         }
-      }
 
-      const noteRes = insertNote.run(
-        deckId,
-        sourceId,
-        JSON.stringify({ ankiNoteId: nid }),
-        JSON.stringify(fields),
-        tags ?? ""
-      );
-      const noteId = Number(noteRes.lastInsertRowid);
+        const spec = preAnalyzed.get(nid);
+        if (spec) {
+          // Japanese deck path: use the vocabNote spec for fields, analysis, and cards.
+          const term = mapping && mapping.japaneseIdx >= 0 ? stripTags(parts[mapping.japaneseIdx] ?? "") : stripTags(front);
+          const gloss = mapping && mapping.meaningIdx >= 0 ? stripTags(parts[mapping.meaningIdx] ?? "") : stripTags(back);
 
-      const ords = cardOrdsByNid.get(nid) ?? [0];
-      for (const ord of ords) {
-        const defaults = newCardDefaults();
-        const media = {
-          image: images[0],
-          audio: audio[0],
-        };
-        insertCard.run(
-          noteId,
-          deckId,
-          "basic",
-          JSON.stringify({ text: fields.Front, ord }),
-          JSON.stringify({ text: fields.Back }),
-          JSON.stringify(media),
-          defaults.due,
-          defaults.stability,
-          defaults.difficulty,
-          defaults.elapsed_days,
-          defaults.scheduled_days,
-          defaults.reps,
-          defaults.lapses,
-          defaults.state
-        );
-        chunkImported++;
+          const noteFields = {
+            Front: stripTags(front),
+            Back: stripTags(back),
+            FrontHtml: front,
+            BackHtml: back,
+            japanese: term,
+            ...(gloss && { meaning: gloss }),
+            // Term/Reading/Gloss from vocabNote enable createNewlyEnabledCards later
+            ...spec.fields,
+          };
+
+          const noteRes = insertNote.run(
+            deckId, sourceId,
+            JSON.stringify({ ankiNoteId: nid }),
+            JSON.stringify(noteFields),
+            spec.tags
+          );
+          const noteId = Number(noteRes.lastInsertRowid);
+
+          for (const a of spec.analysis ?? []) {
+            insertAnalysis.run(
+              noteId, a.kind, a.surface, a.label,
+              a.spanStart, a.spanEnd, a.confidence, a.band,
+              a.needsReview ? 1 : 0,
+              a.analyzerName, a.analyzerVersion,
+              JSON.stringify(a.evidence),
+              JSON.stringify(a.alternatives),
+              JSON.stringify(a.payload)
+            );
+          }
+
+          const media = { image: images[0], audio: audio[0] };
+          for (const card of spec.cards) {
+            const d = newCardDefaults();
+            insertCard.run(
+              noteId, deckId, card.cardType,
+              JSON.stringify(card.question),
+              JSON.stringify(card.answer),
+              JSON.stringify({ ...media, ...(card.media ?? {}) }),
+              d.due, d.stability, d.difficulty, d.elapsed_days, d.scheduled_days,
+              d.reps, d.lapses, d.state
+            );
+            chunkImported++;
+          }
+        } else {
+          // Non-Japanese / analysis-fallback path: plain basic card, unchanged behavior.
+          const fields: any = { Front: stripTags(front), Back: stripTags(back), FrontHtml: front, BackHtml: back };
+          if (mapping) {
+            if (mapping.japaneseIdx >= 0) fields.japanese = stripTags(parts[mapping.japaneseIdx] ?? "");
+            if (mapping.readingIdx >= 0) fields.reading = stripTags(parts[mapping.readingIdx] ?? "");
+            if (mapping.meaningIdx >= 0) fields.meaning = stripTags(parts[mapping.meaningIdx] ?? "");
+          }
+
+          const noteRes = insertNote.run(
+            deckId,
+            sourceId,
+            JSON.stringify({ ankiNoteId: nid }),
+            JSON.stringify(fields),
+            tags ?? ""
+          );
+          const noteId = Number(noteRes.lastInsertRowid);
+
+          const ords = cardOrdsByNid.get(nid) ?? [0];
+          for (const ord of ords) {
+            const defaults = newCardDefaults();
+            const media = {
+              image: images[0],
+              audio: audio[0],
+            };
+            insertCard.run(
+              noteId,
+              deckId,
+              "basic",
+              JSON.stringify({ text: fields.Front, ord }),
+              JSON.stringify({ text: fields.Back }),
+              JSON.stringify(media),
+              defaults.due,
+              defaults.stability,
+              defaults.difficulty,
+              defaults.elapsed_days,
+              defaults.scheduled_days,
+              defaults.reps,
+              defaults.lapses,
+              defaults.state
+            );
+            chunkImported++;
+          }
+        }
       }
+      return chunkImported;
     }
-    return chunkImported;
-  });
+  );
 
   try {
     const notesStmt = sqlDb.prepare("SELECT id, mid, flds, tags FROM notes");
@@ -324,14 +416,16 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     while (notesStmt.step()) {
       chunk.push(notesStmt.get());
       if (chunk.length >= CHUNK_SIZE) {
-        imported += processChunk(chunk);
+        const preAnalyzed = await analyzeJapaneseRows(chunk);
+        imported += persistChunk(chunk, preAnalyzed);
         chunk = [];
         // Yield to event loop
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }
     if (chunk.length > 0) {
-      imported += processChunk(chunk);
+      const preAnalyzed = await analyzeJapaneseRows(chunk);
+      imported += persistChunk(chunk, preAnalyzed);
     }
     notesStmt.free();
   } finally {

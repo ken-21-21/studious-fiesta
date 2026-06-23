@@ -10,7 +10,34 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 206 passing (22 files) · typecheck clean · build clean (server + client)
+- **Tests:** 210 passing (23 files) · typecheck clean · build clean (server + client)
+
+### apkg import: Japanese-content notes routed through analysis/cardgen pipeline (2026-06-23)
+- **Root-cause fix:** `colStmt.get()` in sql.js requires `step()` to be called first;
+  without it the `col.models` value was always `undefined`, leaving `modelFieldMap`
+  empty for every import. Added the missing `colStmt.step()` call before `get()`.
+- **`isJapaneseDeck` flag:** Added to `FieldMapping`. Set to `true` only when
+  field-name or sample-content inference positively identifies a Japanese field
+  (not when the always-applied fallback of index 0 is the only evidence).
+- **Analysis pipeline wiring (`apkgImporter.ts`):**
+  - For each chunk of notes, a new async `analyzeJapaneseRows()` phase runs
+    **before** the DB transaction, calling `vocabNote({ term, gloss })` for every
+    note whose model is flagged `isJapaneseDeck`. The Anki deck's Reading field
+    is intentionally NOT passed as the `reading` argument — kuromoji's confidence
+    pipeline determines the reading independently so uncertain readings are gated
+    the same way textbook imports are (no silently asserted wrong reading).
+  - The sync `persistChunk` DB transaction then uses the pre-computed `NoteSpec`
+    for Japanese notes: writes `note_analyses` rows with full provenance, generates
+    vocab/listening/pitch cards gated by reading confidence, and stores merged
+    fields including `Term`/`Reading`/`Gloss` for future `createNewlyEnabledCards`
+    compatibility.
+  - Non-Japanese decks (no `isJapaneseDeck` evidence) take the unchanged basic-card
+    path: single basic card, no analysis, zero behavior change.
+- **Tests:** `server/test/apkgImporter.analysis.test.ts` (4 new tests):
+  - Japanese vocab deck → `note_analyses` row written, `vocab` card generated.
+  - Confident reading → `listening` card generated (reading clears confidence gate).
+  - English-only deck → single basic card, no `note_analyses`, unchanged behavior.
+  - Ambiguous term ("生物") → `needs_review` tag, listening/pitch withheld, vocab card present.
 
 ### Furigana okurigana splitting + ClozeCard/ScrambleCard rendering (2026-06-23)
 - **Okurigana split fix (server):** Added `splitOkurigana(surface, reading)` helper to
