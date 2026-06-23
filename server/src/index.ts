@@ -11,6 +11,7 @@ import { correctionsRouter } from "./routes/corrections.js";
 import { sourcesRouter } from "./routes/sources.js";
 import { notesRouter } from "./routes/notes.js";
 import { backupRouter } from "./routes/backup.js";
+import { qaRouter } from "./routes/qa.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,8 +27,10 @@ app.use("/api/corrections", correctionsRouter);
 app.use("/api/sources", sourcesRouter);
 app.use("/api/notes", notesRouter);
 app.use("/api/backup", backupRouter);
+app.use("/api/qa", qaRouter);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
 
 const clientDist = path.resolve(__dirname, "../../client/dist");
 if (fs.existsSync(clientDist)) {
@@ -41,7 +44,8 @@ const PORT = Number(process.env.PORT) || 8787;
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({ error: "Internal server error" });
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: err.message || "Internal server error" });
 });
 
 app.listen(PORT, () => {

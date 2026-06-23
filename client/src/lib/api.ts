@@ -182,6 +182,8 @@ export interface CorrectionInput {
   sourceId?: number;
   deckId?: number;
 }
+// Back-compat alias for components that referenced the older name.
+export type CorrectionPayload = CorrectionInput;
 
 export interface AddNoteInput {
   deckId?: number;
@@ -208,7 +210,9 @@ export async function submitCorrection(input: CorrectionInput): Promise<{ id: nu
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Failed to submit correction");
-  return data;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Failed to submit correction");
+  }
+  return res.json();
 }

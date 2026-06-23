@@ -124,4 +124,24 @@ CREATE INDEX IF NOT EXISTS idx_corrections_lookup ON corrections(kind, surface);
 
 CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(due);
 CREATE INDEX IF NOT EXISTS idx_cards_deck ON cards(deck_id);
+CREATE INDEX IF NOT EXISTS idx_cards_note ON cards(note_id);
 CREATE INDEX IF NOT EXISTS idx_notes_deck ON notes(deck_id);
+CREATE INDEX IF NOT EXISTS idx_review_logs_card ON review_logs(card_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+  fields,
+  tags,
+  content='notes',
+  content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+  INSERT INTO notes_fts(rowid, fields, tags) VALUES (new.id, new.fields, new.tags);
+END;
+CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, fields, tags) VALUES('delete', old.id, old.fields, old.tags);
+END;
+CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, fields, tags) VALUES('delete', old.id, old.fields, old.tags);
+  INSERT INTO notes_fts(rowid, fields, tags) VALUES (new.id, new.fields, new.tags);
+END;

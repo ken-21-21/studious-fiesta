@@ -12,9 +12,11 @@ async function buildCollectionDb(): Promise<Buffer> {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   db.run(`
-    CREATE TABLE notes (id INTEGER PRIMARY KEY, flds TEXT, tags TEXT);
+    CREATE TABLE col (id INTEGER PRIMARY KEY, models TEXT);
+    CREATE TABLE notes (id INTEGER PRIMARY KEY, mid INTEGER, flds TEXT, tags TEXT);
     CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER, ord INTEGER);
-    INSERT INTO notes (id, flds, tags) VALUES (1, 'front\x1fback', '');
+    INSERT INTO col (id, models) VALUES (1, '{}');
+    INSERT INTO notes (id, mid, flds, tags) VALUES (1, 1, 'front\x1fback', '');
     INSERT INTO cards (id, nid, ord) VALUES (1, 1, 0);
   `);
   const data = Buffer.from(db.export());

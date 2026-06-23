@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { importApkg } from "../lib/apkgImporter.js";
 import { createTextbookJob, getJob } from "../lib/jobs.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const importsRouter = Router();
 
@@ -28,10 +29,15 @@ const uploadApkg = multer({
   fileFilter: extFilter([".apkg"]),
 });
 
-const uploadTextbook = multer({
+const uploadMedia = multer({
   dest: os.tmpdir(),
   limits: { fileSize: MAX_UPLOAD_BYTES },
-  fileFilter: extFilter([".txt", ".pdf"]),
+  fileFilter: extFilter([
+    ".txt", ".pdf", ".epub",
+    ".png", ".jpg", ".jpeg", ".webp",
+    ".mp3", ".wav", ".m4a", ".mp4",
+    ".srt", ".vtt"
+  ]),
 });
 
 // multer's `fileFilter`/size errors are passed to Express's error pipeline rather than
@@ -54,8 +60,11 @@ function resolveDeckName(provided: unknown, fallback: string): string {
   return name.slice(0, MAX_DECK_NAME_LENGTH);
 }
 
-importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: "No file uploaded" });
+    return;
+  }
   const deckName = resolveDeckName(
     req.body.deckName,
     path.basename(req.file.originalname, ".apkg")
@@ -68,28 +77,43 @@ importsRouter.post("/apkg", withUpload(uploadApkg.single("file")), async (req, r
   } finally {
     fs.unlink(req.file.path, () => {});
   }
-});
+}));
 
 // Textbooks can be large, so they are processed as a background job (one
 // lesson at a time). Returns a jobId the client polls for progress.
-importsRouter.post("/textbook", withUpload(uploadTextbook.single("file")), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-  const deckName = resolveDeckName(req.body.deckName, path.basename(req.file.originalname));
+importsRouter.post("/textbook", withUpload(uploadMedia.single("file")), (req, res, next) => {
   try {
-    const jobId = createTextbookJob(req.file.path, req.file.originalname, deckName);
-    res.status(202).json({ jobId });
-  } catch (err: any) {
-    fs.unlink(req.file.path, () => {});
-    res.status(400).json({ error: err.message ?? "Failed to start import" });
+    if (!req.file) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+    const deckName = resolveDeckName(req.body.deckName, path.basename(req.file.originalname));
+    try {
+      const jobId = createTextbookJob(req.file.path, req.file.originalname, deckName);
+      res.status(202).json({ jobId });
+    } catch (err: any) {
+      fs.unlink(req.file.path, () => {});
+      res.status(400).json({ error: err.message ?? "Failed to start import" });
+    }
+  } catch (err) {
+    next(err);
   }
 });
 
-importsRouter.get("/jobs/:id", (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ error: "Invalid job id" });
+importsRouter.get("/jobs/:id", (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid job id" });
+      return;
+    }
+    const job = getJob(id);
+    if (!job) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+    res.json(job);
+  } catch (err) {
+    next(err);
   }
-  const job = getJob(id);
-  if (!job) return res.status(404).json({ error: "Job not found" });
-  res.json(job);
 });

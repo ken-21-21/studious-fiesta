@@ -3,6 +3,7 @@ import Decks from "./pages/Decks";
 import Import from "./pages/Import";
 import Study from "./pages/Study";
 import AddCard from "./pages/AddCard";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 export default function App() {
   return (
@@ -18,12 +19,14 @@ export default function App() {
         </nav>
       </header>
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Decks />} />
-          <Route path="/add" element={<AddCard />} />
-          <Route path="/import" element={<Import />} />
-          <Route path="/study" element={<Study />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<Decks />} />
+            <Route path="/add" element={<AddCard />} />
+            <Route path="/import" element={<Import />} />
+            <Route path="/study" element={<Study />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
     </>
   );

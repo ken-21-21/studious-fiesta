@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { importApkg, importTextbook, type ImportJob } from "../lib/api";
+import { ErrorMessage } from "../components/Loaders";
 
 export default function Import() {
   const [file, setFile] = useState<File | null>(null);
@@ -13,9 +14,15 @@ export default function Import() {
     if (!file) return;
     const lowerName = file.name.toLowerCase();
     const isApkg = lowerName.endsWith(".apkg");
-    const isSupported = isApkg || lowerName.endsWith(".txt") || lowerName.endsWith(".pdf");
+    const MEDIA_EXTS = [
+      ".txt", ".pdf", ".epub",
+      ".png", ".jpg", ".jpeg", ".webp",
+      ".mp3", ".wav", ".m4a", ".mp4",
+      ".srt", ".vtt",
+    ];
+    const isSupported = isApkg || MEDIA_EXTS.some((ext) => lowerName.endsWith(ext));
     if (!isSupported) {
-      setStatus("Error: unsupported file type. Use .apkg, .txt, or .pdf.");
+      setStatus("Error: unsupported file type. Use .apkg, or a document/media file (.txt, .pdf, .epub, image, audio, .srt/.vtt).");
       return;
     }
 
@@ -46,12 +53,12 @@ export default function Import() {
   return (
     <div className="glass-panel">
       <h2>Import</h2>
-      <p>Drop an Anki <code>.apkg</code> export, or a textbook/text file (<code>.txt</code>, <code>.pdf</code>).</p>
-      
+      <p>Drop an Anki <code>.apkg</code> export, or a document/media file — text, PDF, EPUB, image (OCR), audio (ASR), or subtitles.</p>
+
       <div className="form-group mt-8">
         <input
           type="file"
-          accept=".apkg,.txt,.pdf"
+          accept=".apkg,.txt,.pdf,.epub,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.mp4,.srt,.vtt"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
         <input
@@ -63,7 +70,15 @@ export default function Import() {
         <button disabled={!file || busy} onClick={handleImport} className="btn-primary lg">
           {busy ? "Importing..." : "Import"}
         </button>
-        {status && <p className={status.startsWith("Error") ? "error-text mt-8" : "mt-8"}>{status}</p>}
+        {status && (
+          <div className="mt-8">
+            {status.startsWith("Error") ? (
+              <ErrorMessage message={status.replace("Error: ", "")} />
+            ) : (
+              <p style={{ color: "var(--success)", fontWeight: 500 }}>{status}</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

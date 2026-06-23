@@ -54,7 +54,7 @@ export default function Decks() {
       {error && (
         <div style={{ marginBottom: '24px' }}>
           <ErrorMessage message={error} />
-          <button onClick={load} style={{ marginTop: '16px' }}>Retry</button>
+          <button className="btn-secondary" onClick={load} style={{ marginTop: '16px' }}>Retry</button>
         </div>
       )}
       

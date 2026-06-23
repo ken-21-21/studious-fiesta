@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { addCorrection, reGateExistingAnalyses, type CorrectionKind, type CorrectionScope } from "../lib/corrections.js";
+import { createNewlyEnabledCards } from "../lib/cardgen.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const correctionsRouter = Router();
 
@@ -10,16 +12,19 @@ const SCOPES: CorrectionScope[] = [
   "occurrence", "sentence", "source", "deck", "matching", "global",
 ];
 
-correctionsRouter.post("/", (req, res) => {
+correctionsRouter.post("/", asyncHandler(async (req, res) => {
   const { kind, surface, context, scope, value, note, sourceId, deckId } = req.body ?? {};
   if (!KINDS.includes(kind)) {
-    return res.status(400).json({ error: `kind must be one of: ${KINDS.join(", ")}` });
+    res.status(400).json({ error: `kind must be one of: ${KINDS.join(", ")}` });
+    return;
   }
   if (typeof value !== "string" || !value.trim()) {
-    return res.status(400).json({ error: "value is required" });
+    res.status(400).json({ error: "value is required" });
+    return;
   }
   if (scope !== undefined && !SCOPES.includes(scope)) {
-    return res.status(400).json({ error: `scope must be one of: ${SCOPES.join(", ")}` });
+    res.status(400).json({ error: `scope must be one of: ${SCOPES.join(", ")}` });
+    return;
   }
   const correctionInput = {
     kind,
@@ -32,6 +37,14 @@ correctionsRouter.post("/", (req, res) => {
     deckId: Number.isInteger(deckId) ? deckId : undefined,
   };
   const id = addCorrection(correctionInput);
-  const { analysesUpdated, cardsUpdated } = reGateExistingAnalyses(correctionInput);
-  res.status(201).json({ id, analysesUpdated, cardsUpdated });
-});
+
+  // Two-part re-gating: (1) patch existing analyses + card payloads in place
+  // (scope-aware, provenance-preserving), then (2) create any card types the
+  // now-confident reading newly unlocks (e.g. a pitch card that was gated out).
+  const { analysesUpdated, cardsUpdated, affectedNoteIds } = reGateExistingAnalyses(correctionInput);
+  let cardsCreated = 0;
+  for (const noteId of affectedNoteIds) {
+    cardsCreated += await createNewlyEnabledCards(noteId);
+  }
+  res.status(201).json({ id, analysesUpdated, cardsUpdated, cardsCreated });
+}));

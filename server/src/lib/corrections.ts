@@ -114,22 +114,26 @@ function applyCorrectionToCardPayload(payload: any, surface: string, value: stri
  * generation pipeline doesn't thread that context through either, so they
  * are effectively inert; see PROJECT_STATUS.md).
  */
-export function reGateExistingAnalyses(input: CorrectionInput): { analysesUpdated: number; cardsUpdated: number } {
+export function reGateExistingAnalyses(input: CorrectionInput): {
+  analysesUpdated: number;
+  cardsUpdated: number;
+  affectedNoteIds: number[];
+} {
   if (input.kind !== "reading" && input.kind !== "grammar") {
-    return { analysesUpdated: 0, cardsUpdated: 0 };
+    return { analysesUpdated: 0, cardsUpdated: 0, affectedNoteIds: [] };
   }
   const scope = input.scope ?? "global";
   if (scope !== "global" && scope !== "matching" && scope !== "source" && scope !== "deck") {
-    return { analysesUpdated: 0, cardsUpdated: 0 };
+    return { analysesUpdated: 0, cardsUpdated: 0, affectedNoteIds: [] };
   }
   if (scope === "source" && !input.sourceId) {
-    return { analysesUpdated: 0, cardsUpdated: 0 };
+    return { analysesUpdated: 0, cardsUpdated: 0, affectedNoteIds: [] };
   }
   if (scope === "deck" && !input.deckId) {
-    return { analysesUpdated: 0, cardsUpdated: 0 };
+    return { analysesUpdated: 0, cardsUpdated: 0, affectedNoteIds: [] };
   }
   if (!input.surface) {
-    return { analysesUpdated: 0, cardsUpdated: 0 };
+    return { analysesUpdated: 0, cardsUpdated: 0, affectedNoteIds: [] };
   }
 
   const allRows = selectMatchingAnalysesStmt.all(input.kind, input.surface) as
@@ -180,7 +184,7 @@ export function reGateExistingAnalyses(input: CorrectionInput): { analysesUpdate
     }
   }
 
-  return { analysesUpdated, cardsUpdated };
+  return { analysesUpdated, cardsUpdated, affectedNoteIds: [...affectedNoteIds] };
 }
 
 // Specificity ordering so a more local correction wins over a broader one.

@@ -8,13 +8,74 @@ import { generateLessonNotes, type NoteSpec } from "./cardgen.js";
 import { isJapaneseDoc } from "./lang.js";
 import { ensurePitchData } from "./jp/pitch.js";
 
-async function extractText(filePath: string, originalFilename: string): Promise<string> {
+async function extractMediaText(filePath: string, originalFilename: string): Promise<string> {
   const ext = path.extname(originalFilename).toLowerCase();
+  
   if (ext === ".pdf") {
     const pdfParse = (await import("pdf-parse")).default;
     return (await pdfParse(fs.readFileSync(filePath))).text;
   }
-  return fs.readFileSync(filePath, "utf-8");
+  
+  if ([".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
+    const tesseract = await import("tesseract.js").catch(() => {
+      throw new Error("OCR requires tesseract.js. Please run `npm install tesseract.js` in the server directory.");
+    });
+    const result = await tesseract.recognize(filePath, "jpn");
+    return result.data.text;
+  }
+  
+  if ([".mp3", ".wav", ".m4a", ".mp4"].includes(ext)) {
+    const whisper = (await import("whisper-node").catch(() => {
+      throw new Error("ASR requires whisper-node. Please run `npm install whisper-node` in the server directory.");
+    })).default;
+    // whisper-node creates a transcript from the audio file
+    const transcript = await whisper(filePath, { language: 'ja', task: 'transcribe' });
+    if (Array.isArray(transcript)) {
+      return transcript.map((s: any) => s.speech || s.text || "").join("\n");
+    }
+    return typeof transcript === "string" ? transcript : JSON.stringify(transcript);
+  }
+  
+  if (ext === ".epub") {
+    const AdmZip = (await import("adm-zip")).default;
+    const zip = new AdmZip(filePath);
+    let fullText = "";
+    for (const entry of zip.getEntries()) {
+      if (!entry.isDirectory && entry.entryName.match(/\.(x?html)$/i)) {
+        const html = entry.getData().toString("utf8");
+        const text = html
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/gi, " ")
+          .replace(/&lt;/gi, "<")
+          .replace(/&gt;/gi, ">")
+          .replace(/&amp;/gi, "&")
+          .replace(/\s+/g, " ")
+          .trim();
+        fullText += text + "\n\n";
+      }
+    }
+    return fullText;
+  }
+  
+  const rawText = fs.readFileSync(filePath, "utf-8");
+  
+  if (ext === ".srt" || ext === ".vtt") {
+    return rawText
+      .split(/\r?\n/)
+      .filter((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return false;
+        if (trimmed === "WEBVTT") return false;
+        if (/^\d+$/.test(trimmed)) return false;
+        if (trimmed.includes("-->")) return false;
+        return true;
+      })
+      .join("\n");
+  }
+
+  return rawText;
 }
 
 function lessonLabel(lesson: Lesson): string {
@@ -122,7 +183,7 @@ async function runTextbookJob(id: number, filePath: string, originalFilename: st
     const sourceId = Number(
       insertSourceStmt.run("textbook", originalFilename, hash).lastInsertRowid
     );
-    const text = await extractText(filePath, originalFilename);
+    const text = await extractMediaText(filePath, originalFilename);
 
     if (isJapaneseDoc(text)) {
       updateJob(id, { message: "Preparing Japanese pitch-accent data…" });

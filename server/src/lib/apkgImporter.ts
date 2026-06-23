@@ -91,16 +91,14 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     throw new Error("Not a valid .apkg file (collection database is corrupt)");
   }
 
-  // notes: id, flds (fields separated by \x1f), tags
-  let notesRes, cardsRes;
+  let notesExist = false;
   try {
-    notesRes = sqlDb.exec("SELECT id, flds, tags FROM notes");
-    cardsRes = sqlDb.exec("SELECT nid, ord FROM cards");
-  } finally {
-    sqlDb.close();
-  }
+    const checkRes = sqlDb.exec("SELECT 1 FROM notes LIMIT 1");
+    notesExist = checkRes.length > 0 && checkRes[0].values.length > 0;
+  } catch {}
 
-  if (!notesRes.length) {
+  if (!notesExist) {
+    sqlDb.close();
     throw new Error("No notes found in this .apkg file");
   }
 
@@ -133,24 +131,128 @@ export async function importApkg(filePath: string, deckName: string, originalFil
 
   const { sourceId, deckId } = setupTransaction();
 
+  const colStmt = sqlDb.prepare("SELECT models FROM col");
+  const [modelsJson] = colStmt.get() as [string];
+  colStmt.free();
+  let models: Record<string, any> = {};
+  if (modelsJson) {
+    try {
+      models = JSON.parse(modelsJson);
+    } catch {}
+  }
+
+  const modelSamples = new Map<string, string[][]>();
+  try {
+    const sampleStmt = sqlDb.prepare("SELECT mid, flds FROM notes LIMIT 1000");
+    while (sampleStmt.step()) {
+      const [mid, flds] = sampleStmt.get() as [number, string];
+      const midStr = String(mid);
+      let samples = modelSamples.get(midStr);
+      if (!samples) {
+        samples = [];
+        modelSamples.set(midStr, samples);
+      }
+      if (samples.length < 10) {
+        samples.push(flds.split("\x1f"));
+      }
+    }
+    sampleStmt.free();
+  } catch (e) {
+    console.error("Error reading samples:", e);
+  }
+
+  type FieldMapping = { japaneseIdx: number; readingIdx: number; meaningIdx: number; audioIdx: number };
+  const modelFieldMap = new Map<string, FieldMapping>();
+  const insertCorrection = db.prepare(
+    "INSERT INTO corrections (kind, scope, source_id, context, value) VALUES ('field_mapping', 'source', ?, ?, ?)"
+  );
+
+  db.transaction(() => {
+    for (const [midStr, model] of Object.entries(models)) {
+      if (!model.flds) continue;
+      const fieldNames: string[] = model.flds.map((f: any) => f.name);
+      const samples = modelSamples.get(midStr) || [];
+
+      let japaneseIdx = -1;
+      let readingIdx = -1;
+      let meaningIdx = -1;
+      let audioIdx = -1;
+
+      for (let i = 0; i < fieldNames.length; i++) {
+        const name = fieldNames[i].toLowerCase();
+        if (name.includes("kanji") || name.includes("expression") || name.includes("japanese") || name.includes("vocab") || name === "word") {
+          if (japaneseIdx === -1) japaneseIdx = i;
+        }
+        if (name.includes("kana") || name.includes("reading") || name.includes("yomi") || name.includes("hiragana") || name.includes("furigana")) {
+          if (readingIdx === -1) readingIdx = i;
+        }
+        if (name.includes("english") || name.includes("meaning") || name.includes("translation") || name.includes("def") || name.includes("glossary")) {
+          if (meaningIdx === -1) meaningIdx = i;
+        }
+        if (name.includes("audio") || name.includes("sound") || name.includes("voice") || name.includes("pronunciation")) {
+          if (audioIdx === -1) audioIdx = i;
+        }
+      }
+
+      for (let i = 0; i < fieldNames.length; i++) {
+        let hasKanji = false;
+        let hasKana = false;
+        let hasEnglish = false;
+        let hasAudioRef = false;
+
+        let validSamples = 0;
+
+        for (const sample of samples) {
+          const val = sample[i] || "";
+          if (!val) continue;
+          validSamples++;
+
+          if (/\x5bsound:[^\x5d]+\x5d/i.test(val)) hasAudioRef = true;
+          if (/[\u4e00-\u9faf]/.test(val)) hasKanji = true;
+          if (/[\u3040-\u309f\u30a0-\u30ff]/.test(val)) hasKana = true;
+          if (/[a-zA-Z]/.test(val)) hasEnglish = true;
+        }
+
+        if (validSamples > 0) {
+          if (audioIdx === -1 && hasAudioRef) audioIdx = i;
+          if (japaneseIdx === -1 && hasKanji) japaneseIdx = i;
+          if (readingIdx === -1 && hasKana && !hasKanji) readingIdx = i;
+          if (meaningIdx === -1 && hasEnglish && !hasKanji && !hasKana) meaningIdx = i;
+        }
+      }
+
+      if (japaneseIdx === -1) japaneseIdx = 0;
+      if (meaningIdx === -1 && fieldNames.length > 1) {
+        meaningIdx = 1;
+      }
+
+      const mapping: FieldMapping = { japaneseIdx, readingIdx, meaningIdx, audioIdx };
+      modelFieldMap.set(midStr, mapping);
+      insertCorrection.run(sourceId, midStr, JSON.stringify(mapping));
+    }
+  })();
+
   const cardOrdsByNid = new Map<number, number[]>();
-  if (cardsRes.length) {
-    for (const row of cardsRes[0].values) {
-      const [nid, ord] = row as [number, number];
+  try {
+    const cardsStmt = sqlDb.prepare("SELECT nid, ord FROM cards");
+    while (cardsStmt.step()) {
+      const [nid, ord] = cardsStmt.get() as [number, number];
       const list = cardOrdsByNid.get(nid) ?? [];
       list.push(ord);
       cardOrdsByNid.set(nid, list);
     }
+    cardsStmt.free();
+  } catch (e) {
+    console.error("Error reading cards table:", e);
   }
 
   let imported = 0;
   const CHUNK_SIZE = 500;
-  const values = notesRes[0].values;
 
   const processChunk = db.transaction((chunk: any[]) => {
     let chunkImported = 0;
     for (const row of chunk) {
-      const [nid, flds, tags] = row as [number, string, string];
+      const [nid, mid, flds, tags] = row as [number, number, string, string];
       const parts = flds.split("\x1f");
       const front = parts[0] ?? "";
       const back = parts[1] ?? "";
@@ -165,7 +267,19 @@ export async function importApkg(filePath: string, deckName: string, originalFil
         (orig) => origNameToStored[orig] ?? orig
       );
 
-      const fields = { Front: stripTags(front), Back: stripTags(back), FrontHtml: front, BackHtml: back };
+      const fields: any = { Front: stripTags(front), Back: stripTags(back), FrontHtml: front, BackHtml: back };
+      const mapping = modelFieldMap.get(String(mid));
+      if (mapping) {
+        if (mapping.japaneseIdx >= 0) fields.japanese = stripTags(parts[mapping.japaneseIdx] ?? "");
+        if (mapping.readingIdx >= 0) fields.reading = stripTags(parts[mapping.readingIdx] ?? "");
+        if (mapping.meaningIdx >= 0) fields.meaning = stripTags(parts[mapping.meaningIdx] ?? "");
+        if (mapping.audioIdx >= 0) {
+          const audioRefs = extractMediaRefs(parts[mapping.audioIdx] ?? "");
+          const specificAudio = audioRefs.audio.map((orig) => origNameToStored[orig] ?? orig);
+          audio.unshift(...specificAudio); // Prepend so it becomes audio[0]
+        }
+      }
+
       const noteRes = insertNote.run(
         deckId,
         sourceId,
@@ -204,9 +318,24 @@ export async function importApkg(filePath: string, deckName: string, originalFil
     return chunkImported;
   });
 
-  for (let i = 0; i < values.length; i += CHUNK_SIZE) {
-    const chunk = values.slice(i, i + CHUNK_SIZE);
-    imported += processChunk(chunk);
+  try {
+    const notesStmt = sqlDb.prepare("SELECT id, mid, flds, tags FROM notes");
+    let chunk: any[] = [];
+    while (notesStmt.step()) {
+      chunk.push(notesStmt.get());
+      if (chunk.length >= CHUNK_SIZE) {
+        imported += processChunk(chunk);
+        chunk = [];
+        // Yield to event loop
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    if (chunk.length > 0) {
+      imported += processChunk(chunk);
+    }
+    notesStmt.free();
+  } finally {
+    sqlDb.close();
   }
 
   return { deckId, cardsImported: imported };

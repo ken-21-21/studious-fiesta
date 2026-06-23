@@ -148,13 +148,15 @@ function AnalysisPanel({
   const [open, setOpen] = useState(false);
   const [analysis, setAnalysis] = useState<NoteAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [correctingIdx, setCorrectingIdx] = useState<number | null>(null);
 
   const load = () => {
     setLoading(true);
+    setError(null);
     fetchNoteAnalysis(noteId)
       .then(setAnalysis)
-      .catch(console.error)
+      .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -177,6 +179,8 @@ function AnalysisPanel({
           )}
           {loading ? (
             <p>Loading analysis...</p>
+          ) : error ? (
+            <p className="error-text">Failed to load analysis: {error}</p>
           ) : analysis.length === 0 ? (
             <p>No analysis found.</p>
           ) : (
@@ -187,6 +191,11 @@ function AnalysisPanel({
                     <span className="analysis-surface">{a.surface}</span>
                     <span className="analysis-label">{a.label}</span>
                     <span className="analysis-conf">{(a.confidence * 100).toFixed(0)}% conf</span>
+                    {a.evidence && (
+                      <span className="analysis-evidence" title={JSON.stringify(a.evidence)}>
+                        (Evidence: {typeof a.evidence === "string" ? a.evidence : "Yes"})
+                      </span>
+                    )}
                     {(a.kind === "reading" || a.kind === "grammar") && (
                       <button
                         className="analysis-correct-btn"

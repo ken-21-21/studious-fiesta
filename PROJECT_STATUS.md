@@ -9,8 +9,44 @@ and updated on every change.
   push (see `CLAUDE.md` for the sync rule and reconciliation protocol). No
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
-- **Last updated:** 2026-06-22
-- **Tests:** 64 passing (11 files) · typecheck clean · build clean (server + client)
+- **Last updated:** 2026-06-23
+- **Tests:** 65 passing (11 files) · typecheck clean · build clean (server + client)
+
+### Reconciliation note (2026-06-23, ANTILOG → mine, round 3)
+`ANTILOG` had been force-pushed with 5 new commits (Phase B+ re-gating,
+Phase D media ingestion, Phase E/F Q&A + Anki field inference, a "Swarm"
+hardening pass, and a docs update) since the last sync. Merged via
+`git merge --no-ff origin/ANTILOG`, resolved by hand:
+- **Phase B+ collision** (my `reGateExistingAnalyses` vs. their
+  `syncNoteCards`): kept both, composed as a hybrid. `reGateExistingAnalyses`
+  still does the in-place patch (provenance-preserving, scope-aware,
+  defensive against corrupted rows) and now also returns the set of affected
+  note IDs. Their re-synthesis idea was rewritten as `createNewlyEnabledCards`
+  (`cardgen.ts`) — additive only: re-derives a note's card set and inserts
+  card types that didn't exist before (e.g. a pitch card gated out by a
+  previously-uncertain reading), but never deletes analyses or rewrites
+  existing cards. `POST /api/corrections` now runs the patch, then the
+  additive step over every affected note — closing the "can't retroactively
+  create a card" gap noted in the original Phase B+ entry below.
+- **Kept as-is:** `asyncHandler` Express wrapper + global error handling
+  (Swarm pass), `ErrorBoundary` client crash boundary, the FTS5 `notes_fts`
+  virtual table + triggers and startup backfill, the media-extraction
+  pipeline (PDF/OCR/ASR/EPUB/SRT/VTT) with lazy-imported optional OCR/ASR
+  deps, Anki field-role inference in `apkgImporter.ts`.
+- **Fixed during merge:** `qa.ts`'s static `import Anthropic from
+  "@anthropic-ai/sdk"` (with `// @ts-ignore`) wasn't in `package.json` and
+  would have broken `tsc`/server boot — installed it as a real dependency
+  (matches the locked decision: Q&A LLM = Claude API) and removed the
+  ts-ignore. Added ambient `.d.ts` declarations for `tesseract.js` and
+  `whisper-node` (optional, not in `package.json`) so `tsc` resolves the
+  lazy `import()` calls in `jobs.ts` without requiring the packages at
+  typecheck time. Fixed two tests that broke post-merge: the zip-bomb test
+  fixture was missing a `col` table (every real `.apkg` has one; the new
+  field-inference code in `apkgImporter.ts` queries it), and a corrections
+  test tried to mutate a readonly ESM named export directly instead of
+  `vi.spyOn(...).mockImplementation(...)`.
+- **Safety tag** `pre-reconcile-1bf4f7d` left on the prior tip as a rollback
+  point.
 
 ### Parallel hardening/debug/UI pass (2026-06-22)
 Ran three agents in parallel (isolated git worktrees, no shared files) on
@@ -243,8 +279,11 @@ marked, gated out of study material, traceable to evidence, and correctable.
 | JP grammar layer | `src/lib/jp/grammar.ts`, `aspect.ts` |
 | JP phonology | `src/lib/jp/kana.ts`, `morae.ts`, `pitch.ts`, `colloquial.ts` |
 | Provenance records | `src/lib/jp/analysisRecord.ts` |
-| Corrections | `src/lib/corrections.ts`, `src/routes/corrections.ts` |
-| HTTP routes | `src/routes/{decks,imports,study,sources,notes,corrections}.ts` |
+| Corrections + re-gating | `src/lib/corrections.ts`, `src/lib/cardgen.ts` (`createNewlyEnabledCards`), `src/routes/corrections.ts` |
+| Media ingestion (OCR/ASR/EPUB/subtitles) | `src/lib/jobs.ts` (`extractMediaText`) |
+| Q&A (Claude API, FTS5-backed retrieval) | `src/routes/qa.ts` |
+| Error handling | `src/utils/asyncHandler.ts` |
+| HTTP routes | `src/routes/{decks,imports,study,sources,notes,corrections,backup,qa}.ts` |
 
 ### Key design principles
 - Every reading/grammar claim carries **evidence**, **confidence**, a **band**
@@ -258,7 +297,8 @@ marked, gated out of study material, traceable to evidence, and correctable.
 
 ### Database tables
 `decks`, `notes`, `cards`, `review_logs`, `import_jobs`, `corrections`,
-`sources` (provenance), `note_analyses` (per-note reading/grammar provenance).
+`sources` (provenance), `note_analyses` (per-note reading/grammar provenance),
+`notes_fts` (FTS5 virtual table over `notes`, BM25-ranked, backs `qa.ts`).
 Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 
 ### HTTP API
@@ -268,6 +308,9 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 - `POST /api/corrections`
 - `GET /api/sources`, `GET /api/sources/:id`
 - `GET /api/notes/:id/analysis`
+- `POST /api/notes` (manual add-card)
+- `GET /api/backup` (SQLite DB download)
+- `POST /api/qa` (streaming Claude-API answer, grounded in FTS5 retrieval + optional card/source context)
 - `GET /api/health`
 
 ---
@@ -281,11 +324,11 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 | A | JP pipeline: confidence, evidence, ambiguity KB, gating, corrections | ✅ Done |
 | C | Explicit, inspectable grammar annotation layer | ✅ Done |
 | B | Provenance persistence (sources + note_analyses), grammar wired into ingestion | ✅ Done |
-| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards) | ✅ Done (global/matching/deck/source scope; occurrence/sentence intentionally forward-only, see hardening note) |
-| D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ⬜ Planned |
-| E | Source-grounded Q&A (Claude API) + search/retrieval indexes | ⬜ Planned |
-| F | Client UI: surface confidence/evidence/grammar, correction & review UI | 🔶 Started (provenance/analysis panel via ANTILOG) |
-| — | Anki field-role inference (japanese/reading/meaning/audio/…) with confidence | ⬜ Planned |
+| B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards, additively create newly-enabled cards) | ✅ Done (global/matching/deck/source scope; occurrence/sentence intentionally forward-only, see hardening note) |
+| D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ✅ Done |
+| E | Source-grounded Q&A (Claude API) + search/retrieval indexes (FTS5) | ✅ Done |
+| F | Client UI: surface confidence/evidence/grammar, correction & review UI | ✅ Done |
+| — | Anki field-role inference (japanese/reading/meaning/audio/…) with confidence | ✅ Done |
 
 **Decisions locked in:** OCR/ASR = local OSS (tesseract.js / whisper); Q&A LLM =
 Claude API; personal-use only (no multi-tenant/marketplace/sharing); no

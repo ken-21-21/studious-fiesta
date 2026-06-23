@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { generateLessonNotes } from "../src/lib/cardgen.js";
 import type { Lesson } from "../src/lib/segment.js";
 
@@ -97,5 +97,27 @@ describe("study-material gating on reading confidence", () => {
     expect(oto).toBeTruthy();
     expect(oto!.reading).toBe("おと");
     expect(oto!.uncertain).toBeFalsy();
+  });
+
+  it("respects user corrections even when source explicitly provides a reading", async () => {
+    // Mock the corrections DB lookup module for this test.
+    const readingsModule = await import("../src/lib/corrections.js");
+    const spy = vi.spyOn(readingsModule, "getReadingCorrection").mockImplementation((surface: string) => {
+      if (surface === "角") return { id: 1, kind: "reading", scope: "global", value: "つの", created_at: "" };
+      return null;
+    });
+    try {
+      const notes = await generateLessonNotes(vocabLesson(["角 かど corner"]));
+      const note = notes[0];
+      const q = note.cards[0].question as any;
+      expect(q.reading).toBe("つの"); // Overridden from 'かど'
+      expect(q.furigana[0].reading).toBe("つの");
+
+      const analysis = note.analysis![0];
+      expect(analysis.label).toBe("つの");
+      expect(analysis.confidence).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -8,6 +8,8 @@ import { classify, splitSentences } from "./lang.js";
 import { makeEnglishCloze } from "./en.js";
 import { scrambledOrder } from "./shuffle.js";
 import type { Lesson, Section, SectionType } from "./segment.js";
+import { db } from "../db/index.js";
+import { newCardDefaults } from "./fsrs.js";
 
 export type CardType = "vocab" | "cloze" | "scramble" | "listening" | "pitch";
 
@@ -104,14 +106,23 @@ interface TermAnalysis {
 }
 
 async function analyzeTerm(term: string, explicitReading?: string): Promise<TermAnalysis> {
-  // A source-provided reading (e.g. an Anki/vocab-list reading column) is
-  // trustworthy: treat it as whole-word ruby and skip disambiguation doubt.
-  if (explicitReading) {
-    const reading = kataToHira(explicitReading);
-    const tokens = await tokenize(term);
+  // 1. A user correction on the whole term overrides everything, even explicit source readings.
+  const correction = (await import("./corrections.js")).getReadingCorrection?.(term) ?? null;
+  const userReading = correction ? correction.value : null;
+
+  // A source-provided reading or user correction is trustworthy: treat it as
+  // whole-word ruby and skip disambiguation doubt.
+  const trustedReading = userReading ?? explicitReading;
+  if (trustedReading) {
+    const reading = kataToHira(trustedReading);
+    const tokens = await tokenize(term, { sourceFurigana: { [term]: reading } });
     const content = tokens.filter((t) => t.isContentWord);
     const target = content.sort((a, b) => b.surface.length - a.surface.length)[0] ?? tokens[0];
-    const pitch = target ? await lookupPitch(target.base, target.reading) : null;
+    const pitch = (await lookupPitch(term, reading)) ?? (target ? await lookupPitch(target.base, target.reading) : null);
+    
+    const evidenceSource = userReading ? "user_correction" : "source_furigana";
+    const evidenceDetail = userReading ? `User-corrected reading (scope: ${correction!.scope})` : "Reading supplied by source vocabulary list";
+
     return {
       furigana: [{ text: term, reading }],
       reading,
@@ -119,7 +130,7 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
       pitch,
       readingUncertain: false,
       alternatives: [],
-      // A source-supplied reading is a single high-confidence whole-word claim.
+      // A source-supplied or user-corrected reading is a single high-confidence whole-word claim.
       analysis: [
         {
           kind: "reading",
@@ -127,14 +138,14 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
           label: reading,
           spanStart: null,
           spanEnd: null,
-          confidence: 0.95,
+          confidence: userReading ? 1 : 0.95,
           band: "high",
           needsReview: false,
           analyzerName: null,
           analyzerVersion: null,
-          evidence: [{ source: "source_furigana", detail: "Reading supplied by source vocabulary list" }],
+          evidence: [{ source: evidenceSource, detail: evidenceDetail }],
           alternatives: [],
-          payload: { surface: term, selected: reading, source: "source_furigana" },
+          payload: { surface: term, selected: reading, source: evidenceSource },
         },
       ],
     };
@@ -156,7 +167,7 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
   if (!readingUncertain) {
     const target = content.sort((a, b) => b.surface.length - a.surface.length)[0] ?? tokens[0];
     if (target && !target.readingDecision.needsReview) {
-      pitch = await lookupPitch(target.base, target.reading);
+      pitch = (await lookupPitch(term, reading)) ?? (await lookupPitch(target.base, target.reading));
     }
   }
 
@@ -171,7 +182,7 @@ async function analyzeTerm(term: string, explicitReading?: string): Promise<Term
   };
 }
 
-async function vocabNote(entry: VocabEntry): Promise<NoteSpec> {
+export async function vocabNote(entry: VocabEntry): Promise<NoteSpec> {
   const a = await analyzeTerm(entry.term, entry.reading);
   const jp = {
     furigana: a.furigana,
@@ -335,7 +346,7 @@ function englishSentenceCards(sentence: string, type: SectionType): CardSpec[] {
   return cards;
 }
 
-async function sentenceNote(sentence: string, type: SectionType): Promise<NoteSpec | null> {
+export async function sentenceNote(sentence: string, type: SectionType): Promise<NoteSpec | null> {
   const lang = classify(sentence);
   if (lang === "en") {
     const cards = englishSentenceCards(sentence, type);
@@ -385,4 +396,101 @@ export async function generateLessonNotes(lesson: Lesson): Promise<NoteSpec[]> {
     notes.push(...(await generateSection(section, budget)));
   }
   return notes;
+}
+
+/**
+ * Additive re-gating companion to `reGateExistingAnalyses`: after a correction
+ * makes a reading confident, a card type that was previously *gated out*
+ * (e.g. a pitch or listening card that was never generated for an uncertain
+ * reading) can now legitimately exist. This re-derives the note's spec and
+ * inserts only the card types it doesn't already have.
+ *
+ * Deliberately additive-only: it never deletes `note_analyses`, never rewrites
+ * an existing card, and never touches FSRS scheduling state on cards that are
+ * already in review. Patching existing analyses/card payloads in place (and
+ * preserving `corrected_by_user` provenance) is owned by
+ * `reGateExistingAnalyses`; this only fills in what the correction newly
+ * unlocked. Returns the number of cards created.
+ *
+ * Note: it reconstructs the note from textbook-import field/tag shape
+ * (`fields.Term`/`fields.sentence`/`tags`), so it is a no-op for manual-add
+ * and apkg `basic` notes — which is correct, since those carry no gated
+ * reading-dependent cards to unlock.
+ */
+export async function createNewlyEnabledCards(noteId: number): Promise<number> {
+  const noteRow = db.prepare("SELECT * FROM notes WHERE id = ?").get(noteId) as any;
+  if (!noteRow) return 0;
+
+  let fields: any;
+  try {
+    fields = JSON.parse(noteRow.fields);
+  } catch {
+    return 0;
+  }
+  const tags: string = noteRow.tags ?? "";
+
+  let spec: NoteSpec | null = null;
+  if (tags.includes("vocabulary")) {
+    // Only re-supply the source-provided reading if the original analysis
+    // actually came from source furigana — otherwise let the analyzer (now
+    // armed with the user's correction) decide, exactly as forward generation does.
+    const analysisRows = db
+      .prepare("SELECT evidence FROM note_analyses WHERE note_id = ? AND kind = 'reading' AND surface = ?")
+      .all(noteId, fields.Term) as { evidence: string }[];
+    let wasSourceFurigana = false;
+    for (const r of analysisRows) {
+      try {
+        const evs = JSON.parse(r.evidence);
+        if (evs.some((e: any) => e.source === "source_furigana")) wasSourceFurigana = true;
+      } catch {}
+    }
+    spec = await vocabNote({
+      term: fields.Term,
+      reading: wasSourceFurigana ? (fields.Reading || undefined) : undefined,
+      gloss: fields.Gloss,
+    });
+  } else {
+    const type = tags.split(" ")[0] as SectionType;
+    if (fields.sentence) spec = await sentenceNote(fields.sentence, type);
+  }
+
+  if (!spec) return 0;
+
+  const existingTypes = new Set(
+    (db.prepare("SELECT card_type FROM cards WHERE note_id = ?").all(noteId) as { card_type: string }[])
+      .map((c) => c.card_type)
+  );
+
+  const insertCardStmt = db.prepare(`
+    INSERT INTO cards (note_id, deck_id, card_type, question, answer, media,
+      due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let created = 0;
+  const tx = db.transaction(() => {
+    for (const card of spec!.cards) {
+      if (existingTypes.has(card.cardType)) continue; // never rewrite existing cards
+      const defaults = newCardDefaults();
+      insertCardStmt.run(
+        noteId,
+        noteRow.deck_id,
+        card.cardType,
+        JSON.stringify(card.question),
+        JSON.stringify(card.answer),
+        JSON.stringify(card.media ?? {}),
+        defaults.due,
+        defaults.stability,
+        defaults.difficulty,
+        defaults.elapsed_days,
+        defaults.scheduled_days,
+        defaults.reps,
+        defaults.lapses,
+        defaults.state
+      );
+      created++;
+    }
+  });
+  tx();
+  return created;
 }

@@ -95,6 +95,68 @@ const ENTRIES: AmbiguousEntry[] = [
       { reading: "おとなげ", note: "maturity; adult-ness (大人+気), as in 大人気ない" },
     ],
   },
+  {
+    surface: "角",
+    readings: [
+      { reading: "かど", note: "corner (street, etc.)" },
+      { reading: "つの", note: "horn / antler" },
+    ],
+  },
+  {
+    surface: "十分",
+    dominant: "じゅうぶん",
+    readings: [
+      { reading: "じゅうぶん", note: "enough / sufficient" },
+      { reading: "じゅっぷん", note: "10 minutes" },
+      { reading: "じっぷん", note: "10 minutes (classical/formal)" },
+    ],
+  },
+  {
+    surface: "空く",
+    readings: [
+      { reading: "あく", note: "to be open / empty" },
+      { reading: "すく", note: "to become less crowded / empty (stomach)" },
+    ],
+  },
+  {
+    surface: "弾く",
+    readings: [
+      { reading: "ひく", note: "to play (a stringed instrument)" },
+      { reading: "はじく", note: "to flick / repel" },
+    ],
+  },
+  {
+    surface: "怒る",
+    dominant: "おこる",
+    readings: [
+      { reading: "おこる", note: "to get angry (everyday)" },
+      { reading: "いかる", note: "to get angry (formal/literary)" },
+    ],
+  },
+  {
+    surface: "何か",
+    dominant: "なにか",
+    readings: [
+      { reading: "なにか", note: "something" },
+      { reading: "なんか", note: "things like... / somehow" },
+    ],
+  },
+  {
+    surface: "下手",
+    readings: [
+      { reading: "へた", note: "unskillful" },
+      { reading: "したて", note: "humble position / subordinate" },
+      { reading: "しもて", note: "downstage" },
+    ],
+  },
+  {
+    surface: "開ける",
+    dominant: "あける",
+    readings: [
+      { reading: "あける", note: "to open (transitive)" },
+      { reading: "ひらける", note: "to become civilized / open up" },
+    ],
+  },
 ];
 
 const BY_SURFACE = new Map(ENTRIES.map((e) => [e.surface, e]));
