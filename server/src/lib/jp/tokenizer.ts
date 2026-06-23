@@ -2,6 +2,7 @@ import { getPrimaryAnalyzer, type MorphToken } from "./analyzer.js";
 import { disambiguateReading } from "./readings.js";
 import type { ReadingDecision } from "./types.js";
 import { normalizeText } from "./normalize.js";
+import { hasKanji, hasKana } from "./kana.js";
 
 // Parts of speech that make good vocabulary / cloze targets.
 const CONTENT_POS = new Set(["名詞", "動詞", "形容詞", "副詞", "形状詞", "連体詞"]);
@@ -76,13 +77,76 @@ export interface FuriganaSegment {
   uncertain?: boolean;
 }
 
+/**
+ * Split a token into kanji-run(s) and kana-run(s) before building
+ * FuriganaSegments, so the ruby annotation only covers the kanji and not the
+ * already-readable kana okurigana.
+ *
+ * Algorithm (standard okurigana-alignment via exact string matching):
+ * 1. Trim the longest matching kana suffix shared between surface and reading.
+ * 2. Trim the longest matching kana prefix from what remains.
+ * 3. The middle is the kanji run; its corresponding reading slice is its ruby text.
+ *
+ * Falls back to whole-token ruby when the surface has no kanji or when the
+ * structural alignment can't be determined safely.
+ *
+ * Examples:
+ *   食べる / たべる → [{ text:'食', reading:'た' }, { text:'べる' }]
+ *   お茶   / おちゃ → [{ text:'お' }, { text:'茶', reading:'ちゃ' }]
+ *   天気   / てんき → [{ text:'天気', reading:'てんき' }]  (all kanji, no split)
+ */
+export function splitOkurigana(surface: string, reading: string): FuriganaSegment[] {
+  if (!hasKanji(surface)) {
+    // Pure kana / punctuation — no ruby annotation needed.
+    return [{ text: surface }];
+  }
+
+  const sChars = [...surface];
+  const rChars = [...reading];
+
+  // Step 1: find longest matching kana suffix (trailing okurigana).
+  let suffixLen = 0;
+  while (suffixLen < sChars.length && suffixLen < rChars.length) {
+    const sCh = sChars[sChars.length - 1 - suffixLen];
+    const rCh = rChars[rChars.length - 1 - suffixLen];
+    if (!hasKana(sCh) || sCh !== rCh) break;
+    suffixLen++;
+  }
+
+  // Step 2: find longest matching kana prefix from what remains.
+  const sStem = sChars.slice(0, sChars.length - suffixLen);
+  const rStem = rChars.slice(0, rChars.length - suffixLen);
+
+  let prefixLen = 0;
+  while (prefixLen < sStem.length && prefixLen < rStem.length) {
+    const sCh = sStem[prefixLen];
+    const rCh = rStem[prefixLen];
+    if (!hasKana(sCh) || sCh !== rCh) break;
+    prefixLen++;
+  }
+
+  const kanjiRun = sStem.slice(prefixLen).join("");
+  const kanjiReading = rStem.slice(prefixLen).join("");
+
+  // Safety: if the kanji run is empty or has no kanji, fall back to whole-token.
+  if (!kanjiRun || !hasKanji(kanjiRun)) {
+    return [{ text: surface, reading }];
+  }
+
+  const segs: FuriganaSegment[] = [];
+  if (prefixLen > 0) segs.push({ text: sStem.slice(0, prefixLen).join("") });
+  segs.push({ text: kanjiRun, reading: kanjiReading });
+  if (suffixLen > 0) segs.push({ text: sChars.slice(sChars.length - suffixLen).join("") });
+  return segs;
+}
+
 export async function toFuriganaSegments(text: string, opts: AnalyzeOptions = {}): Promise<FuriganaSegment[]> {
   const tokens = await tokenize(text, opts);
-  return tokens.map((t) => {
-    if (t.furigana) return { text: t.surface, reading: t.furigana };
+  return tokens.flatMap((t) => {
+    if (t.furigana) return splitOkurigana(t.surface, t.furigana);
     if (t.readingDecision.needsReview && t.readingDecision.selected) {
-      return { text: t.surface, uncertain: true };
+      return [{ text: t.surface, uncertain: true }];
     }
-    return { text: t.surface };
+    return [{ text: t.surface }];
   });
 }

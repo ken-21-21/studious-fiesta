@@ -10,7 +10,29 @@ and updated on every change.
   manually-tracked "last synced commit" anchor anymore — it's derived from
   git (`git merge-base`) since the branches converge after every sync.
 - **Last updated:** 2026-06-23
-- **Tests:** 196 passing (21 files) · typecheck clean · build clean (server + client)
+- **Tests:** 206 passing (22 files) · typecheck clean · build clean (server + client)
+
+### Furigana okurigana splitting + ClozeCard/ScrambleCard rendering (2026-06-23)
+- **Okurigana split fix (server):** Added `splitOkurigana(surface, reading)` helper to
+  `server/src/lib/jp/tokenizer.ts` implementing the standard suffix/prefix alignment
+  algorithm. Ruby annotation now only covers the kanji run; kana okurigana (e.g. `べる`
+  in `食べる`) and honorific prefixes (e.g. `お` in `お茶`) are emitted as plain text
+  segments. Uncertain tokens (needsReview) are preserved as whole-token `uncertain: true`
+  segments — uncertainty gating takes priority over splitting. Both `toFuriganaSegments`
+  and `furiganaOf` now use `flatMap` + `splitOkurigana`. Tests: `server/test/furigana.test.ts`
+  (10 new tests: pure-kanji, trailing okurigana, leading prefix, fallback, mismatch,
+  uncertain-token, end-to-end confidence check).
+- **ClozeCard furigana (client):** Front now renders `question.furigana` via the
+  `Furigana` component. Back shows the full question furigana (sentence context with
+  blank) plus the answer word with its own furigana/uncertainty marker. English cloze
+  cards (no furigana field) fall through to plain text.
+- **ScrambleCard furigana (client):** Server now emits `answer.wordFurigana:
+  FuriganaSegment[][]` (per-word segment arrays). Revealed correct-order answer on the
+  back now renders each word with its furigana via inline ruby markup; falls back to
+  plain text join if `wordFurigana` is absent.
+- **CSS consolidation (client):** Removed the duplicate global `ruby/rt` block
+  (lines 488–504 of `CardTypes.css`). All ruby-styling properties merged into the
+  already-scoped `.furigana-line ruby/.furigana-line rt` rules; no behavior change.
 
 ### OCR/ASR moved to cloud APIs (2026-06-23)
 **Decision change:** OCR and ASR have moved from local-OSS to cloud API calls.

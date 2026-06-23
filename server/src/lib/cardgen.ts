@@ -1,4 +1,4 @@
-import { tokenize, type AnalyzedToken, type FuriganaSegment } from "./jp/tokenizer.js";
+import { tokenize, splitOkurigana, type AnalyzedToken, type FuriganaSegment } from "./jp/tokenizer.js";
 import { analyzeGrammar } from "./jp/grammar.js";
 import { readingRecords, grammarRecords, type AnalysisRecord } from "./jp/analysisRecord.js";
 import { lookupPitch, type PitchInfo } from "./jp/pitch.js";
@@ -36,16 +36,16 @@ const BLANK = "＿＿＿";
 const PUNCT_POS = "記号";
 
 function furiganaOf(tokens: AnalyzedToken[]): FuriganaSegment[] {
-  return tokens.map((t) => {
-    if (t.furigana) return { text: t.surface, reading: t.furigana };
+  return tokens.flatMap((t) => {
+    if (t.furigana) return splitOkurigana(t.surface, t.furigana);
     // A kanji-bearing token whose reading we declined to commit to must be
     // flagged, not silently rendered as if it were a kana/punctuation token
     // with nothing to show — that would hide the analyzer's uncertainty
     // from the very surface where the user would otherwise notice it.
     if (t.readingDecision.needsReview && t.readingDecision.selected) {
-      return { text: t.surface, uncertain: true };
+      return [{ text: t.surface, uncertain: true }];
     }
-    return { text: t.surface };
+    return [{ text: t.surface }];
   });
 }
 
@@ -278,11 +278,15 @@ async function japaneseSentenceCards(
       const clozeText = tokens.map((t, i) => (i === idx ? BLANK : t.surface)).join("");
       
       const isUncertain = target.readingDecision.needsReview;
+      const answerFurigana: FuriganaSegment[] | undefined = !isUncertain && target.furigana
+        ? splitOkurigana(target.surface, target.furigana)
+        : undefined;
       cards.push({
         cardType: "cloze",
         question: { text: clozeText, furigana: clozeFuri, lang: "ja" },
         answer: { 
-          text: target.surface, 
+          text: target.surface,
+          furigana: answerFurigana,
           reading: isUncertain ? undefined : (target.reading ?? undefined),
           readingUncertain: isUncertain || undefined,
           readingAlternatives: isUncertain && target.readingDecision.alternatives.length ? target.readingDecision.alternatives : undefined
@@ -294,13 +298,21 @@ async function japaneseSentenceCards(
   if (wantScramble && wordTokens.length >= 3 && wordTokens.length <= 14) {
     const words = wordTokens.map((t) => t.surface);
     const readingUncertain = wordTokens.some((t) => t.readingDecision.needsReview);
+    const wordFurigana: FuriganaSegment[][] = wordTokens.map((t): FuriganaSegment[] => {
+      if (t.furigana) return splitOkurigana(t.surface, t.furigana);
+      if (t.readingDecision.needsReview && t.readingDecision.selected) {
+        return [{ text: t.surface, uncertain: true }];
+      }
+      return [{ text: t.surface }];
+    });
     cards.push({
       cardType: "scramble",
       question: { words: scrambledOrder(words), lang: "ja" },
       answer: { 
         words, 
         reading: readingUncertain ? undefined : readingOf(wordTokens),
-        readingUncertain: readingUncertain || undefined
+        readingUncertain: readingUncertain || undefined,
+        wordFurigana,
       },
     });
   }

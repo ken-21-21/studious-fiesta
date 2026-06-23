@@ -319,18 +319,8 @@ function BasicCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, 
   );
 }
 
-// Server-generated cloze blanks come in two forms depending on language:
-// ASCII "_____" for English (en.ts's makeEnglishCloze) and full-width
-// "＿＿＿" for Japanese (cardgen.ts's BLANK constant). Match either so the
-// revealed answer is substituted in place instead of leaving the blank
-// on screen forever for JP cloze cards.
-const CLOZE_BLANK_RE = /_____|＿＿＿/;
-
 function ClozeCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, { card_type: "cloze" }>; onRate: Props["onRate"]; ratingDisabled?: boolean }) {
   const [revealed, setRevealed] = useState(false);
-  const display = revealed
-    ? card.question.text.replace(CLOZE_BLANK_RE, `[${card.answer.text}]`)
-    : card.question.text;
   return (
     <motion.div 
       className="flip-card-inner"
@@ -340,14 +330,25 @@ function ClozeCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCard, 
     >
       <div className="flip-card-front card-surface">
         <Media media={card.media} />
-        <div className="card-prompt">{card.question.text}</div>
+        <div className="card-prompt">
+          {card.question.furigana ? <Furigana segments={card.question.furigana} /> : card.question.text}
+        </div>
         <button className="text-input" onClick={() => setRevealed(true)}>
           Show answer
         </button>
       </div>
       <div className="flip-card-back card-surface">
         <Media media={card.media} />
-        <div className="card-prompt">{display}</div>
+        <div className="card-prompt">
+          {card.question.furigana ? <Furigana segments={card.question.furigana} /> : card.question.text}
+        </div>
+        <div className="card-answer">
+          {card.answer.furigana
+            ? <Furigana segments={card.answer.furigana} />
+            : card.answer.readingUncertain
+              ? <ruby className="furigana-uncertain">{card.answer.text}<rt>?</rt></ruby>
+              : card.answer.text}
+        </div>
         <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />
       </div>
@@ -498,7 +499,33 @@ function ScrambleCard({ card, onRate, ratingDisabled }: { card: Extract<StudyCar
         <div className="card-prompt">Put the sentence in order</div>
         <div className="card-answer">
           {isCorrect ? "Correct! " : "Correct order: "}
-          {correct.join(" ")}
+          {card.answer.wordFurigana
+            ? <span className="furigana-line">
+                {card.answer.words.map((w, i) => {
+                  const segs = card.answer.wordFurigana![i];
+                  return (
+                    <span key={i}>
+                      {segs && segs.some((s) => s.reading || s.uncertain)
+                        ? segs.map((seg, j) =>
+                            seg.reading ? (
+                              <ruby key={j} className={seg.uncertain ? "furigana-uncertain" : undefined}>
+                                {seg.text}<rt>{seg.reading}{seg.uncertain ? "?" : ""}</rt>
+                              </ruby>
+                            ) : seg.uncertain ? (
+                              <ruby key={j} className="furigana-uncertain">
+                                {seg.text}<rt>?</rt>
+                              </ruby>
+                            ) : (
+                              <span key={j}>{seg.text}</span>
+                            )
+                          )
+                        : w}
+                      {" "}
+                    </span>
+                  );
+                })}
+              </span>
+            : correct.join(" ")}
         </div>
         <RatingRow onRate={onRate} disabled={ratingDisabled} focusOnReveal={revealed} />
         <AnalysisPanel noteId={card.note_id} deckId={card.deck_id} provenance={card.provenance} />

@@ -47,9 +47,9 @@ export type StudyCard = {
   provenance?: Provenance;
 } & (
   | { card_type: "basic"; question: { text: string }; answer: { text: string } }
-  | { card_type: "cloze"; question: { text: string }; answer: { text: string } }
+  | { card_type: "cloze"; question: { text: string } & JpFields; answer: { text: string } & JpFields }
   | { card_type: "listening"; question: { tts: string } & JpFields; answer: { text: string } & JpFields }
-  | { card_type: "scramble"; question: { words: string[] }; answer: { words: string[] } }
+  | { card_type: "scramble"; question: { words: string[]; lang?: "ja" | "en" }; answer: { words: string[]; reading?: string; readingUncertain?: boolean; wordFurigana?: FuriganaSegment[][] } }
   | { card_type: "vocab"; question: { text: string } & JpFields; answer: { text: string } & JpFields }
   | { card_type: "pitch"; question: { text: string } & JpFields; answer: { pitch: PitchInfo } }
 );
