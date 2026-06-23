@@ -12,6 +12,24 @@ and updated on every change.
 - **Last updated:** 2026-06-23
 - **Tests:** 228 passing (25 files) · typecheck clean · build clean (server + client)
 
+### PWA: installable app (2026-06-23)
+Client is now an installable Progressive Web App via `vite-plugin-pwa`.
+
+- **Manifest** — name "FSRS Learn", purple theme (`#1b1030`), `display: standalone`,
+  icons at 192/512px plus a maskable 512px variant (rendered from the existing
+  `favicon.svg` logo via a headless-Chromium screenshot, since no SVG rasterizer
+  was available in this environment).
+- **Service worker** — `registerType: 'autoUpdate'`, registered in `main.tsx` via
+  `virtual:pwa-register`. Precaches build assets (Workbox `generateSW` mode).
+- **Deliberately NOT cached:** `/api/*` and `/media/*` — both `navigateFallbackDenylist`
+  and a `NetworkOnly` runtime-caching rule exclude them, so study data and FSRS
+  scheduling always come from the live server, never a stale offline snapshot.
+  Same correctness principle as "never silently teach wrong Japanese": don't
+  serve data that's silently out of date either.
+- Verified via production build + `vite preview`: manifest/SW/icons all serve
+  200, SW reaches `active` state, app renders correctly (checked with a
+  Playwright script and a full-page screenshot).
+
 ### Ingestion robustness hardening — apkg + textbook (2026-06-23)
 Stress-tested both importers against real-world and non-standard inputs. All
 confirmed issues fixed with regression tests; one item deferred (see below).
