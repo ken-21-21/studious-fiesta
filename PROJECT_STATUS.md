@@ -12,6 +12,22 @@ and updated on every change.
 - **Last updated:** 2026-06-23
 - **Tests:** 185 passing (21 files) · typecheck clean · build clean (server + client)
 
+### Apple-level polish: animations + interactivity (2026-06-23)
+- Added higher-fidelity navigation and motion polish:
+  - Header now animates into view on mount.
+  - Top-nav uses active-state pills (`NavLink`) with underline reveal and accent
+    highlighting for current route.
+- Added list microinteractions on Decks:
+  - Deck rows now animate in with subtle staggered entry.
+  - Pointer interactions now get gentle hover lift + tap feedback.
+- Added motion accessibility guardrails:
+  - Global `prefers-reduced-motion` override now minimizes animations/transitions
+    and disables hover transforms.
+  - Decks page respects reduced-motion preference for framer-motion initial/hover
+    states.
+- Added keyboard-focus polish:
+  - Consistent `:focus-visible` ring and accent border across links/buttons/inputs.
+
 ### Frontend wiring + responsive polish (2026-06-23)
 - Fixed client wiring/lint issues that could hide stale state races or weaken type
   safety:
