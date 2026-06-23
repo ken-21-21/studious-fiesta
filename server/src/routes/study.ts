@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
 import { gradeCard, VALID_RATINGS, type CardRow } from "../lib/fsrs.js";
+import { parseJsonOrDefault, parseJsonOrThrow } from "../utils/json.js";
 
 export const studyRouter = Router();
 
@@ -73,16 +74,16 @@ studyRouter.get("/queue", (req, res, next) => {
           lapses: r.lapses,
           state: r.state,
           last_review: r.last_review,
-          question: JSON.parse(r.question),
-          answer: JSON.parse(r.answer),
-          media: JSON.parse(r.media),
-          noteFields: r.note_fields ? JSON.parse(r.note_fields) : {},
+          question: parseJsonOrThrow(r.question, "question"),
+          answer: parseJsonOrThrow(r.answer, "answer"),
+          media: parseJsonOrThrow(r.media, "media"),
+          noteFields: parseJsonOrDefault(r.note_fields, {}),
           provenance: r.source_id
             ? {
                 sourceId: r.source_id,
                 kind: r.source_kind,
                 filename: r.source_filename,
-                location: r.source_location ? JSON.parse(r.source_location) : undefined,
+                location: parseJsonOrDefault(r.source_location, undefined),
               }
             : undefined,
         });

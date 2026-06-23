@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
 import { newCardDefaults } from "../lib/fsrs.js";
+import { parseJsonOrThrow } from "../utils/json.js";
 
 export const notesRouter = Router();
 
@@ -122,9 +123,9 @@ notesRouter.get("/:id/analysis", (req, res, next) => {
           analyzer: r.analyzer_name
             ? { name: r.analyzer_name, version: r.analyzer_version }
             : undefined,
-          evidence: JSON.parse(r.evidence),
-          alternatives: JSON.parse(r.alternatives),
-          payload: JSON.parse(r.payload),
+          evidence: parseJsonOrThrow(r.evidence, "evidence"),
+          alternatives: parseJsonOrThrow(r.alternatives, "alternatives"),
+          payload: parseJsonOrThrow(r.payload, "payload"),
           correctedByUser: !!r.corrected_by_user,
           createdAt: r.created_at,
         });

@@ -49,6 +49,17 @@ describe("POST /api/qa validation", () => {
     expect(body.error).toMatch(/question is required/);
   });
 
+  it("rejects a whitespace-only question with 400", async () => {
+    const res = await fetch(`${baseUrl}/api/qa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: "   " }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/question is required/);
+  });
+
   it("rejects a question over the max length with 400 before touching the Anthropic client", async () => {
     const res = await fetch(`${baseUrl}/api/qa`, {
       method: "POST",

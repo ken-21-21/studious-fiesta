@@ -73,6 +73,18 @@ describe("POST /api/imports/apkg", () => {
     expect(deck).toBeTruthy();
   });
 
+  it("sanitizes control characters from deckName", async () => {
+    const buf = await buildApkgBuffer();
+    const form = new FormData();
+    form.append("file", new Blob([buf]), "sanitize-deck.apkg");
+    form.append("deckName", "  Safe\tDeck\nName  ");
+
+    const res = await fetch(`${baseUrl}/api/imports/apkg`, { method: "POST", body: form });
+    expect(res.status).toBe(200);
+    const deck = db.prepare("SELECT name FROM decks WHERE name = ?").get("SafeDeckName");
+    expect(deck).toBeTruthy();
+  });
+
   it("rejects a non-.apkg file extension with 400 (multer fileFilter)", async () => {
     const form = new FormData();
     form.append("file", new Blob([Buffer.from("not a real apkg")]), "notes.txt");

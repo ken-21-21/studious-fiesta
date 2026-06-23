@@ -5,15 +5,18 @@ import Anthropic from "@anthropic-ai/sdk";
 export const qaRouter = Router();
 
 const MAX_QUESTION_LENGTH = 2000;
+const MAX_QUERY_TERMS = 40;
+const MAX_QUERY_TERM_LENGTH = 64;
 
 qaRouter.post("/", async (req, res, next) => {
   try {
     const { question, cardId, sourceId } = req.body;
-    if (!question || typeof question !== "string") {
+    if (typeof question !== "string" || !question.trim()) {
       res.status(400).json({ data: null, error: "question is required" });
       return;
     }
-    if (question.length > MAX_QUESTION_LENGTH) {
+    const questionTrimmed = question.trim();
+    if (questionTrimmed.length > MAX_QUESTION_LENGTH) {
       res.status(400).json({ data: null, error: `question must be under ${MAX_QUESTION_LENGTH} characters` });
       return;
     }
@@ -39,10 +42,13 @@ qaRouter.post("/", async (req, res, next) => {
 
     // 2. FTS5 BM25 search for relevant text
     // Strip FTS5 special characters to avoid syntax errors
-    const safeTerms = question
+    const safeTerms = questionTrimmed
       .replace(/[^\w\s\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g, " ")
       .trim()
       .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, MAX_QUERY_TERMS)
+      .map((term) => term.slice(0, MAX_QUERY_TERM_LENGTH))
       .filter(Boolean);
 
     if (safeTerms.length > 0) {
@@ -85,7 +91,7 @@ Context:
 ${context}
 
 User's Question:
-${question}`;
+${questionTrimmed}`;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -114,9 +120,9 @@ ${question}`;
   } catch (err: any) {
     console.error("QA error:", err);
     if (!res.headersSent) {
-      res.status(500).json({ data: null, error: err.message });
+      res.status(500).json({ data: null, error: "Failed to answer question" });
     } else if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: "Failed to answer question" })}\n\n`);
       res.end();
     }
   }

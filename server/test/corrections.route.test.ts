@@ -95,7 +95,7 @@ describe("POST /api/corrections", () => {
     expect(row.scope).toBe("global");
   });
 
-  it("ignores a non-integer sourceId/deckId rather than erroring", async () => {
+  it("rejects non-integer sourceId/deckId", async () => {
     const { status, body } = await post({
       kind: "reading",
       surface: "適当",
@@ -103,9 +103,16 @@ describe("POST /api/corrections", () => {
       sourceId: "not-a-number",
       deckId: 3.5,
     });
-    expect(status).toBe(201);
-    const row = db.prepare("SELECT source_id, deck_id FROM corrections WHERE id = ?").get(body.data.id) as any;
-    expect(row.source_id).toBeNull();
-    expect(row.deck_id).toBeNull();
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/sourceId|deckId/);
+  });
+
+  it("rejects an oversized correction value", async () => {
+    const { status, body } = await post({
+      kind: "reading",
+      value: "x".repeat(501),
+    });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/under 500/);
   });
 });

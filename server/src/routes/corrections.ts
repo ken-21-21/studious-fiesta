@@ -11,6 +11,10 @@ const KINDS: CorrectionKind[] = [
 const SCOPES: CorrectionScope[] = [
   "occurrence", "sentence", "source", "deck", "matching", "global",
 ];
+const MAX_VALUE_LENGTH = 500;
+const MAX_CONTEXT_LENGTH = 2000;
+const MAX_SURFACE_LENGTH = 200;
+const MAX_NOTE_LENGTH = 1000;
 
 correctionsRouter.post("/", asyncHandler(async (req, res) => {
   const { kind, surface, context, scope, value, note, sourceId, deckId } = req.body ?? {};
@@ -22,19 +26,44 @@ correctionsRouter.post("/", asyncHandler(async (req, res) => {
     res.status(400).json({ data: null, error: "value is required" });
     return;
   }
+  const valueTrimmed = value.trim();
+  if (valueTrimmed.length > MAX_VALUE_LENGTH) {
+    res.status(400).json({ data: null, error: `value must be under ${MAX_VALUE_LENGTH} characters` });
+    return;
+  }
   if (scope !== undefined && !SCOPES.includes(scope)) {
     res.status(400).json({ data: null, error: `scope must be one of: ${SCOPES.join(", ")}` });
     return;
   }
+  if (surface !== undefined && (typeof surface !== "string" || !surface.trim() || surface.trim().length > MAX_SURFACE_LENGTH)) {
+    res.status(400).json({ data: null, error: `surface must be a non-empty string under ${MAX_SURFACE_LENGTH} characters` });
+    return;
+  }
+  if (context !== undefined && (typeof context !== "string" || context.trim().length > MAX_CONTEXT_LENGTH)) {
+    res.status(400).json({ data: null, error: `context must be under ${MAX_CONTEXT_LENGTH} characters` });
+    return;
+  }
+  if (note !== undefined && (typeof note !== "string" || note.trim().length > MAX_NOTE_LENGTH)) {
+    res.status(400).json({ data: null, error: `note must be under ${MAX_NOTE_LENGTH} characters` });
+    return;
+  }
+  if (sourceId !== undefined && (!Number.isInteger(sourceId) || sourceId <= 0)) {
+    res.status(400).json({ data: null, error: "sourceId must be a positive integer" });
+    return;
+  }
+  if (deckId !== undefined && (!Number.isInteger(deckId) || deckId <= 0)) {
+    res.status(400).json({ data: null, error: "deckId must be a positive integer" });
+    return;
+  }
   const correctionInput = {
     kind,
-    surface: typeof surface === "string" ? surface : undefined,
-    context: typeof context === "string" ? context : undefined,
+    surface: typeof surface === "string" ? surface.trim() : undefined,
+    context: typeof context === "string" ? context.trim() : undefined,
     scope,
-    value: value.trim(),
-    note: typeof note === "string" ? note : undefined,
-    sourceId: Number.isInteger(sourceId) ? sourceId : undefined,
-    deckId: Number.isInteger(deckId) ? deckId : undefined,
+    value: valueTrimmed,
+    note: typeof note === "string" ? note.trim() : undefined,
+    sourceId: sourceId as number | undefined,
+    deckId: deckId as number | undefined,
   };
   const id = addCorrection(correctionInput);
 

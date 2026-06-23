@@ -11,9 +11,14 @@ export const importsRouter = Router();
 
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 const MAX_DECK_NAME_LENGTH = 200;
+const MAX_FILENAME_LENGTH = 255;
 
 function extFilter(allowed: string[]) {
   return (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+    if (file.originalname.length > MAX_FILENAME_LENGTH || file.originalname.includes("\0")) {
+      cb(new Error("Invalid filename"));
+      return;
+    }
     const ext = path.extname(file.originalname).toLowerCase();
     if (!allowed.includes(ext)) {
       cb(new Error(`Unsupported file type "${ext || "unknown"}". Expected: ${allowed.join(", ")}`));
@@ -71,8 +76,9 @@ function withUpload(middleware: RequestHandler) {
 }
 
 function resolveDeckName(provided: unknown, fallback: string): string {
-  const trimmed = typeof provided === "string" ? provided.trim() : "";
-  const name = trimmed || fallback;
+  const sanitize = (value: string) => value.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  const trimmed = typeof provided === "string" ? sanitize(provided) : "";
+  const name = trimmed || sanitize(fallback) || "Imported";
   return name.slice(0, MAX_DECK_NAME_LENGTH);
 }
 

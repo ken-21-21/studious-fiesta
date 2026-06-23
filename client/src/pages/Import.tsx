@@ -26,7 +26,7 @@ export default function Import() {
   }, []);
 
   const handleImport = async () => {
-    if (!file) return;
+    if (!file || busy) return;
     const lowerName = file.name.toLowerCase();
     const isApkg = lowerName.endsWith(".apkg");
     const MEDIA_EXTS = [
@@ -59,8 +59,9 @@ export default function Import() {
         );
       }
       navigateTimerRef.current = setTimeout(() => navigate("/"), 1200);
-    } catch (err: any) {
-      toast.error(`Error: ${err.message}`, { id: toastId });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Import failed";
+      toast.error(`Error: ${message}`, { id: toastId });
     } finally {
       setBusy(false);
     }

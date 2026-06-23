@@ -57,8 +57,9 @@ export default function Decks() {
             await deleteDeck(id);
             toast.success("Deck deleted successfully");
             load();
-          } catch (err: any) {
-            toast.error(err.message ?? "Failed to delete deck");
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to delete deck";
+            toast.error(message);
           }
         }
       },

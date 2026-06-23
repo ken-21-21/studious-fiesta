@@ -25,6 +25,7 @@ export default function AddCard() {
   }, []);
 
   const handleAdd = async (keepGoing: boolean) => {
+    if (busy) return;
     if (!front.trim() || !back.trim()) {
       toast.error("Front and back are both required.");
       return;
@@ -51,8 +52,9 @@ export default function AddCard() {
       } else {
         navigate(`/study?deckId=${result.deckId}`);
       }
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to add card");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to add card";
+      toast.error(message);
     } finally {
       setBusy(false);
     }

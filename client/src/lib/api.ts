@@ -10,7 +10,7 @@ export interface Provenance {
   sourceId: number;
   kind: string;
   filename: string;
-  location?: any;
+  location?: unknown;
 }
 
 export interface FuriganaSegment {
@@ -63,17 +63,42 @@ export interface NoteAnalysis {
   band: "high" | "medium" | "low";
   needsReview: boolean;
   analyzer?: { name: string; version: string };
-  evidence: any;
-  alternatives: any;
-  payload: any;
+  evidence: unknown;
+  alternatives: unknown;
+  payload: unknown;
   correctedByUser: boolean;
   createdAt: string;
 }
 
+interface ApiEnvelope<T> {
+  data: T;
+  error: string | null;
+}
+
+function asErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
+async function parseEnvelope<T>(res: Response): Promise<ApiEnvelope<T>> {
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    throw new Error("Invalid server response");
+  }
+  if (!body || typeof body !== "object") throw new Error("Invalid server response");
+  const envelope = body as Partial<ApiEnvelope<T>>;
+  return {
+    data: envelope.data as T,
+    error: typeof envelope.error === "string" ? envelope.error : null,
+  };
+}
+
 async function unwrap<T>(res: Response, fallbackError: string): Promise<T> {
-  const body = await res.json();
+  const body = await parseEnvelope<T>(res);
   if (!res.ok) throw new Error(body.error ?? fallbackError);
-  return body.data as T;
+  return body.data;
 }
 
 export async function fetchDecks(): Promise<Deck[]> {
@@ -84,8 +109,12 @@ export async function fetchDecks(): Promise<Deck[]> {
 export async function deleteDeck(id: number): Promise<void> {
   const res = await fetch(`/api/decks/${id}`, { method: "DELETE" });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? "Failed to delete deck");
+    try {
+      const body = await parseEnvelope<null>(res);
+      throw new Error(body.error ?? "Failed to delete deck");
+    } catch (err) {
+      throw new Error(asErrorMessage(err, "Failed to delete deck"));
+    }
   }
 }
 
@@ -111,7 +140,7 @@ export async function importApkg(file: File, deckName: string) {
   fd.append("file", file);
   fd.append("deckName", deckName);
   const res = await fetch("/api/import/apkg", { method: "POST", body: fd });
-  return unwrap<any>(res, "Import failed");
+  return unwrap<{ cardsImported: number }>(res, "Import failed");
 }
 
 export interface ImportJob {
@@ -152,7 +181,12 @@ export async function importTextbook(
     const job = await fetchImportJob(jobId);
     onProgress?.(job);
     if (job.status === "done") {
-      return job.result ? JSON.parse(job.result) : { decks: [], totalCards: 0 };
+      if (!job.result) return { decks: [], totalCards: 0 };
+      try {
+        return JSON.parse(job.result) as { decks: { id: number; name: string; cards: number }[]; totalCards: number };
+      } catch {
+        throw new Error("Import returned malformed result data");
+      }
     }
     if (job.status === "error") {
       throw new Error(job.error ?? "Import failed");

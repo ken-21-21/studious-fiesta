@@ -53,8 +53,9 @@ export default function Study() {
       await reviewCard(current.id, rating);
       setQueue(rest);
       setReviewed((n) => n + 1);
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to submit review");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to submit review";
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
