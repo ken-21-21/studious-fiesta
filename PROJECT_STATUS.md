@@ -12,6 +12,20 @@ and updated on every change.
 - **Last updated:** 2026-06-23
 - **Tests:** 196 passing (21 files) · typecheck clean · build clean (server + client)
 
+### OCR/ASR moved to cloud APIs (2026-06-23)
+**Decision change:** OCR and ASR have moved from local-OSS to cloud API calls.
+- **OCR** (`.png`, `.jpg`, `.jpeg`, `.webp`): now calls Claude Haiku vision
+  (`claude-haiku-4-5`) via the Anthropic API — pure transcription prompt,
+  no local tesseract.js dependency.
+- **ASR** (`.mp3`, `.wav`, `.m4a`, `.mp4`): now calls OpenAI
+  `gpt-4o-mini-transcribe` via `POST /v1/audio/transcriptions` with
+  `language: "ja"` — no local whisper-node dependency.
+- **`OPENAI_API_KEY`** is now a required env var for audio imports (alongside
+  the existing `ANTHROPIC_API_KEY` required for Q&A and OCR). See
+  `server/.env.example` for documentation of both keys.
+- Removed stale `tesseract.js` and `whisper-node` module declarations from
+  `server/src/types.d.ts`.
+
 ### P0/P1 implementation pass: reliability, guardrails, CI, explainability (2026-06-23)
 - Reliability/coverage expansion:
   - `imports.route.test.ts`: added high-volume `.apkg` import validation (120 notes),
@@ -546,14 +560,16 @@ Older DBs are migrated in place via `ensureColumn` in `src/db/index.ts`.
 | C | Explicit, inspectable grammar annotation layer | ✅ Done |
 | B | Provenance persistence (sources + note_analyses), grammar wired into ingestion | ✅ Done |
 | B+ | Corrections ↔ analysis loop (mark `corrected_by_user`, re-gate affected cards, additively create newly-enabled cards) | ✅ Done (global/matching/deck/source scope; occurrence/sentence intentionally forward-only, see hardening note) |
-| D | Ingestion breadth: OCR (tesseract.js), ASR (whisper), EPUB, subtitles | ✅ Done |
+| D | Ingestion breadth: OCR (Claude Haiku vision), ASR (gpt-4o-mini-transcribe), EPUB, subtitles | ✅ Done |
 | E | Source-grounded Q&A (Claude API) + search/retrieval indexes (FTS5) | ✅ Done |
 | F | Client UI: surface confidence/evidence/grammar, correction & review UI | ✅ Done |
 | — | Anki field-role inference (japanese/reading/meaning/audio/…) with confidence | ✅ Done |
 
-**Decisions locked in:** OCR/ASR = local OSS (tesseract.js / whisper); Q&A LLM =
-Claude API; personal-use only (no multi-tenant/marketplace/sharing); no
-preloaded curriculum; do not rewrite from scratch.
+**Decisions locked in:** OCR/ASR = cloud API (Claude Haiku vision for OCR,
+gpt-4o-mini-transcribe for ASR) — updated 2026-06-23, supersedes earlier
+"local OSS" decision; Q&A LLM = Claude API; personal-use only (no
+multi-tenant/marketplace/sharing); no preloaded curriculum; do not rewrite
+from scratch.
 
 ---
 
